@@ -25,7 +25,6 @@ def save_new_lines(welt_nummer, lines):
     new_global_lines = [line for line in new_lines if is_global_chat(line)]
     new_local_lines = [line for line in new_lines if line not in new_global_lines]
 
-    # Lokale Logs
     if new_local_lines:
         filename = f"welt{welt_nummer}_chatlog.txt"
         with open(filename, "a", encoding="utf-8") as f:
@@ -36,7 +35,6 @@ def save_new_lines(welt_nummer, lines):
         print(f"[Welt {welt_nummer}] {len(new_local_lines)} neue lokale Zeile(n) gespeichert.")
         LAST_LINES[welt_nummer].update(new_local_lines)
 
-    # Global Chat (nur Welt 1)
     if welt_nummer == 1 and new_global_lines:
         filename = "global_chatlog.txt"
         with open(filename, "a", encoding="utf-8") as f:
@@ -116,6 +114,13 @@ def index():
                 font-weight: bold;
                 background-color: #ddd;
             }
+            .search-container {
+                margin-bottom: 10px;
+            }
+            input[type="text"] {
+                padding: 5px;
+                width: 300px;
+            }
         </style>
         <script>
             function toggleRefresh(checkbox) {
@@ -137,6 +142,18 @@ def index():
 
             function stopRefresh() {
                 clearInterval(intervalId);
+            }
+
+            function searchChat() {
+                const query = document.getElementById("search").value.toLowerCase();
+                const lines = document.querySelectorAll(".chatline");
+                lines.forEach(line => {
+                    if (line.textContent.toLowerCase().includes(query)) {
+                        line.style.display = "block";
+                    } else {
+                        line.style.display = "none";
+                    }
+                });
             }
 
             window.onload = function() {
@@ -165,9 +182,12 @@ def index():
                 Auto-Refresh (10s)
             </label>
         </div>
+        <div class="search-container">
+            <input type="text" id="search" placeholder="Nachricht durchsuchen..." onkeyup="searchChat()">
+        </div>
         <div class="chatbox">
             {% for line in lines %}
-                <div class="{% if 'schreit:' in line %}schreit{% endif %}">{{ line.strip() }}</div>
+                <div class="chatline {% if 'schreit:' in line %}schreit{% endif %}">{{ line.strip() }}</div>
             {% endfor %}
         </div>
     </body>
