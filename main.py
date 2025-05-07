@@ -3,7 +3,7 @@ import time
 import os
 from bs4 import BeautifulSoup
 from datetime import datetime
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, redirect, url_for
 import threading
 
 WELTEN = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
@@ -107,9 +107,9 @@ def index():
             }
             .buttons form {
                 display: inline;
+                margin-right: 5px;
             }
             .buttons button {
-                margin-right: 5px;
                 padding: 5px 10px;
             }
             .active {
@@ -151,11 +151,14 @@ def index():
     </head>
     <body>
         <div class="buttons">
-            {% for name in logs.keys() %}
-            <form method="get">
-                <input type="hidden" name="welt" value="{{ name }}">
-                <button type="submit" class="{% if selected_world == name %}active{% endif %}">{{ name }}</button>
-            </form>
+            {% for name, file in logs.items() %}
+                <form method="get" style="display:inline;">
+                    <input type="hidden" name="welt" value="{{ name }}">
+                    <button type="submit" class="{% if selected_world == name %}active{% endif %}">{{ name }}</button>
+                </form>
+                <form method="post" action="/delete/{{ file }}" style="display:inline;">
+                    <button title="Löschen" onclick="return confirm('Datei wirklich löschen?')">🗑️</button>
+                </form>
             {% endfor %}
             <label style="margin-left: 20px;">
                 <input type="checkbox" id="autorefresh" onchange="toggleRefresh(this)">
@@ -170,8 +173,18 @@ def index():
     </body>
     </html>
     """
-
     return render_template_string(html, logs=logs, lines=lines, selected_world=selected_world)
+
+@app.route("/delete/<filename>", methods=["POST"])
+def delete_file(filename):
+    allowed_files = [f"welt{i}_chatlog.txt" for i in range(1, 15)] + ["global_chatlog.txt"]
+    if filename not in allowed_files:
+        return "Nicht erlaubt", 403
+    try:
+        os.remove(filename)
+        return redirect(url_for("index"))
+    except Exception as e:
+        return f"Fehler beim Löschen: {e}", 500
 
 if __name__ == "__main__":
     def start_tracker():
