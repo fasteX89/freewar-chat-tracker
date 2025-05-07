@@ -1,68 +1,99 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <title>Freewar Chat Logs</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-            background: #f4f4f4;
-        }
-        h1, h2 {
-            color: #333;
-        }
-        textarea {
-            width: 100%;
-            height: 400px;
-            white-space: pre;
-            font-family: monospace;
-            margin-bottom: 40px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Freewar Chat Logs</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f4f4f4;
+    }
+    h1, h2 {
+      color: #333;
+    }
+    textarea {
+      width: 100%;
+      height: 400px;
+      white-space: pre;
+      font-family: monospace;
+      margin-bottom: 20px;
+    }
+    .controls {
+      margin-bottom: 20px;
+    }
+  </style>
 </head>
 <body>
-    <h1>Freewar Chat Logs</h1>
-    <p>Wähle eine Welt oder den globalen Chat aus, um die Logs anzuzeigen:</p>
+  <h1>Freewar Chat Logs</h1>
 
+  <div class="controls">
+    <label for="logSelector">Wähle Chat-Datei:</label>
     <select id="logSelector" onchange="loadLog()">
-        <option value="global_chatlog.txt">🌐 Global</option>
-        <option value="welt1_chatlog.txt">Welt 1</option>
-        <option value="welt2_chatlog.txt">Welt 2</option>
-        <option value="welt3_chatlog.txt">Welt 3</option>
-        <option value="welt4_chatlog.txt">Welt 4</option>
-        <option value="welt5_chatlog.txt">Welt 5</option>
-        <option value="welt6_chatlog.txt">Welt 6</option>
-        <option value="welt7_chatlog.txt">Welt 7</option>
-        <option value="welt8_chatlog.txt">Welt 8</option>
-        <option value="welt9_chatlog.txt">Welt 9</option>
-        <option value="welt10_chatlog.txt">Welt 10</option>
-        <option value="welt11_chatlog.txt">Welt 11</option>
-        <option value="welt12_chatlog.txt">Welt 12</option>
-        <option value="welt13_chatlog.txt">Welt 13</option>
-        <option value="welt14_chatlog.txt">Welt 14</option>
+      <option value="global_chatlog.txt">🌐 Global</option>
+      <option value="welt1_chatlog.txt">Welt 1</option>
+      <option value="welt2_chatlog.txt">Welt 2</option>
+      <option value="welt3_chatlog.txt">Welt 3</option>
+      <option value="welt4_chatlog.txt">Welt 4</option>
+      <option value="welt5_chatlog.txt">Welt 5</option>
+      <option value="welt6_chatlog.txt">Welt 6</option>
+      <option value="welt7_chatlog.txt">Welt 7</option>
+      <option value="welt8_chatlog.txt">Welt 8</option>
+      <option value="welt9_chatlog.txt">Welt 9</option>
+      <option value="welt10_chatlog.txt">Welt 10</option>
+      <option value="welt11_chatlog.txt">Welt 11</option>
+      <option value="welt12_chatlog.txt">Welt 12</option>
+      <option value="welt13_chatlog.txt">Welt 13</option>
+      <option value="welt14_chatlog.txt">Welt 14</option>
     </select>
 
-    <h2 id="logTitle">Anzeigen: Global</h2>
-    <textarea id="logOutput" readonly>Log wird geladen...</textarea>
+    <button onclick="deleteLog()">🗑️ Löschen</button>
+    <label><input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> 🔄 Auto-Refresh (30s)</label>
+  </div>
 
-    <script>
-        async function loadLog() {
-            const file = document.getElementById("logSelector").value;
-            const title = document.getElementById("logSelector").selectedOptions[0].text;
-            document.getElementById("logTitle").innerText = `Anzeigen: ${title}`;
-            try {
-                const response = await fetch("/" + file);
-                if (!response.ok) throw new Error("Fehler beim Laden der Datei.");
-                const text = await response.text();
-                document.getElementById("logOutput").value = text;
-            } catch (err) {
-                document.getElementById("logOutput").value = "Fehler beim Laden: " + err;
-            }
-        }
+  <h2 id="logTitle">Anzeigen: Global</h2>
+  <textarea id="logOutput" readonly>Log wird geladen...</textarea>
 
-        // Beim Start laden
-        loadLog();
-    </script>
+  <script>
+    let intervalId = null;
+
+    async function loadLog() {
+      const file = document.getElementById("logSelector").value;
+      const title = document.getElementById("logSelector").selectedOptions[0].text;
+      document.getElementById("logTitle").innerText = `Anzeigen: ${title}`;
+      try {
+        const response = await fetch("/" + file);
+        if (!response.ok) throw new Error("Fehler beim Laden.");
+        const text = await response.text();
+        document.getElementById("logOutput").value = text;
+      } catch (err) {
+        document.getElementById("logOutput").value = "Fehler: " + err;
+      }
+    }
+
+    async function deleteLog() {
+      const file = document.getElementById("logSelector").value;
+      if (!confirm(`Möchtest du die Datei '${file}' wirklich löschen?`)) return;
+      try {
+        const response = await fetch(`/delete/${file}`, { method: "POST" });
+        const result = await response.text();
+        alert(result);
+        loadLog(); // neu laden
+      } catch (err) {
+        alert("Fehler beim Löschen: " + err);
+      }
+    }
+
+    function toggleAutoRefresh() {
+      if (document.getElementById("autoRefresh").checked) {
+        intervalId = setInterval(loadLog, 30000); // alle 30 Sekunden
+      } else {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    }
+
+    loadLog(); // initial
+  </script>
 </body>
 </html>
