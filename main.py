@@ -3,7 +3,7 @@ import time
 import os
 from bs4 import BeautifulSoup
 from datetime import datetime
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, send_from_directory, request, render_template
 
 # -------------------------------
 # Chat-Tracking-Konfiguration
@@ -70,33 +70,17 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return render_template("logs.html")
+    return send_from_directory('.', 'logs.html')
 
-@app.route("/welt<int:welt_nummer>")
-def show_world_chat(welt_nummer):
-    # Zeigt den Chat der gewählten Welt
-    filename = f"welt{welt_nummer}_chatlog.txt"
-    try:
-        with open(filename, "r", encoding="utf-8") as f:
-            chat_lines = f.readlines()
-    except FileNotFoundError:
-        chat_lines = []
-    return render_template("logs.html", chat_lines=chat_lines, welt_nummer=welt_nummer)
+@app.route("/<path:filename>")
+def serve_log(filename):
+    return send_from_directory('.', filename)
 
-@app.route("/global")
-def show_global_chat():
-    # Zeigt den globalen Chat
-    try:
-        with open("global_chatlog.txt", "r", encoding="utf-8") as f:
-            chat_lines = f.readlines()
-    except FileNotFoundError:
-        chat_lines = []
-    return render_template("logs.html", chat_lines=chat_lines, welt_nummer="Global")
-
-@app.route("/delete", methods=["POST"])
-def delete_log():
-    # Löschen des Logs der aktuellen Welt
-    filename = request.form["filename"]
+@app.route("/delete/<filename>", methods=["POST"])
+def delete_log(filename):
+    safe_files = [f"welt{i}_chatlog.txt" for i in range(1, 15)] + ["global_chatlog.txt"]
+    if filename not in safe_files:
+        return "Nicht erlaubt", 403
     try:
         os.remove(filename)
         return f"Datei {filename} gelöscht."
