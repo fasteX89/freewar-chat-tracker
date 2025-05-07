@@ -3,7 +3,7 @@ import time
 import os
 from bs4 import BeautifulSoup
 from datetime import datetime
-from flask import Flask, send_from_directory, request
+from flask import Flask, send_from_directory, render_template_string
 import threading
 
 # -------------------------------
@@ -21,6 +21,12 @@ def extract_chat_lines(html):
 def is_global_chat(line):
     return any(f"(Welt {i})" in line for i in range(2, 15))  # Welt 1 ist lokale Quelle, andere sind global
 
+def format_message(message):
+    """ Format message to highlight 'schreit:' in blue """
+    if "schreit:" in message:
+        return f'<span style="color: blue;">{message}</span>'
+    return message
+
 def save_new_lines(welt_nummer, lines):
     global LAST_GLOBAL_LINES
     new_lines = [line for line in lines if line not in LAST_LINES[welt_nummer]]
@@ -34,7 +40,8 @@ def save_new_lines(welt_nummer, lines):
         with open(filename, "a", encoding="utf-8") as f:
             f.write(f"--- {timestamp} ---\n")
             for line in new_local_lines:
-                f.write(f"{line}\n")
+                formatted_line = format_message(line)  # Formatieren
+                f.write(f"{formatted_line}\n")
             f.write("\n")
         print(f"[Welt {welt_nummer}] {len(new_local_lines)} neue lokale Zeile(n) gespeichert.")
         LAST_LINES[welt_nummer].update(new_local_lines)
@@ -45,7 +52,8 @@ def save_new_lines(welt_nummer, lines):
         with open(filename, "a", encoding="utf-8") as f:
             f.write(f"--- {timestamp} ---\n")
             for line in new_global_lines:
-                f.write(f"{line}\n")
+                formatted_line = format_message(line)  # Formatieren
+                f.write(f"{formatted_line}\n")
             f.write("\n")
         print(f"[GLOBAL] {len(new_global_lines)} neue Zeile(n) gespeichert.")
         LAST_GLOBAL_LINES.update(new_global_lines)
@@ -71,7 +79,36 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return send_from_directory('.', 'logs.html')
+    logs = []
+    # Lade alle Logs und füge sie zusammen
+    for i in range(1, 15):
+        try:
+            with open(f"welt{i}_chatlog.txt", "r", encoding="utf-8") as file:
+                logs.append(file.read())
+        except FileNotFoundError:
+            continue
+    
+    # Lade den globalen Chat
+    try:
+        with open("global_chatlog.txt", "r", encoding="utf-8") as file:
+            logs.append(file.read())
+    except FileNotFoundError:
+        pass
+
+    # Zeige die Logs an
+    formatted_logs = "".join(logs)
+    return render_template_string("""
+        <html>
+            <head><title>Freewar Chat Tracker</title></head>
+            <body>
+                <h1>Freewar Chat Tracker</h1>
+                <h2>Logs</h2>
+                <div style="border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll;">
+                    {{ logs | safe }}
+                </div>
+            </body>
+        </html>
+    """, logs=formatted_logs)
 
 @app.route("/<path:filename>")
 def serve_log(filename):
