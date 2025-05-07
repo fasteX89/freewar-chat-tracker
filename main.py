@@ -3,8 +3,7 @@ import time
 import os
 from bs4 import BeautifulSoup
 from datetime import datetime
-from flask import Flask, send_from_directory, render_template_string
-import threading
+from flask import Flask, send_from_directory, request, render_template_string
 
 # -------------------------------
 # Chat-Tracking-Konfiguration
@@ -21,12 +20,6 @@ def extract_chat_lines(html):
 def is_global_chat(line):
     return any(f"(Welt {i})" in line for i in range(2, 15))  # Welt 1 ist lokale Quelle, andere sind global
 
-def format_message(message):
-    """ Format message to highlight 'schreit:' in blue """
-    if "schreit:" in message:
-        return f'<span style="color: blue;">{message}</span>'
-    return message
-
 def save_new_lines(welt_nummer, lines):
     global LAST_GLOBAL_LINES
     new_lines = [line for line in lines if line not in LAST_LINES[welt_nummer]]
@@ -40,8 +33,7 @@ def save_new_lines(welt_nummer, lines):
         with open(filename, "a", encoding="utf-8") as f:
             f.write(f"--- {timestamp} ---\n")
             for line in new_local_lines:
-                formatted_line = format_message(line)  # Formatieren
-                f.write(f"{formatted_line}\n")
+                f.write(f"{line}\n")
             f.write("\n")
         print(f"[Welt {welt_nummer}] {len(new_local_lines)} neue lokale Zeile(n) gespeichert.")
         LAST_LINES[welt_nummer].update(new_local_lines)
@@ -52,8 +44,7 @@ def save_new_lines(welt_nummer, lines):
         with open(filename, "a", encoding="utf-8") as f:
             f.write(f"--- {timestamp} ---\n")
             for line in new_global_lines:
-                formatted_line = format_message(line)  # Formatieren
-                f.write(f"{formatted_line}\n")
+                f.write(f"{line}\n")
             f.write("\n")
         print(f"[GLOBAL] {len(new_global_lines)} neue Zeile(n) gespeichert.")
         LAST_GLOBAL_LINES.update(new_global_lines)
@@ -79,40 +70,60 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    logs = []
-    # Lade alle Logs und füge sie zusammen
+    # Holen der Logdateien für alle Welten
+    logs = {}
     for i in range(1, 15):
         try:
-            with open(f"welt{i}_chatlog.txt", "r", encoding="utf-8") as file:
-                logs.append(file.read())
+            with open(f"welt{i}_chatlog.txt", "r", encoding="utf-8") as f:
+                logs[f"Welt {i}"] = f.readlines()
         except FileNotFoundError:
-            continue
-    
-    # Lade den globalen Chat
-    try:
-        with open("global_chatlog.txt", "r", encoding="utf-8") as file:
-            logs.append(file.read())
-    except FileNotFoundError:
-        pass
+            logs[f"Welt {i}"] = []
 
-    # Zeige die Logs an
-    formatted_logs = "".join(logs)
+    try:
+        with open("global_chatlog.txt", "r", encoding="utf-8") as f:
+            logs["Globaler Chat"] = f.readlines()
+    except FileNotFoundError:
+        logs["Globaler Chat"] = []
+
     return render_template_string("""
         <html>
-            <head><title>Freewar Chat Tracker</title></head>
+            <head>
+                <title>Freewar Chat Tracker</title>
+                <style>
+                    .shout { color: blue; font-weight: bold; }
+                    .message { margin-bottom: 10px; }
+                    select { font-size: 16px; padding: 5px; }
+                </style>
+            </head>
             <body>
                 <h1>Freewar Chat Tracker</h1>
-                <h2>Logs</h2>
-                <div style="border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll;">
-                    {{ logs | safe }}
+                <h2>Wählen Sie eine Welt:</h2>
+                <form action="/" method="get">
+                    <select name="welt">
+                        <option value="Globaler Chat">Globaler Chat</option>
+                        {% for welt in range(1, 15) %}
+                            <option value="Welt {{ welt }}">Welt {{ welt }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="submit" value="Anzeigen">
+                </form>
+
+                <h2>Chat Nachrichten:</h2>
+                {% set selected_world = request.args.get('welt', 'Globaler Chat') %}
+                <div>
+                    {% for line in logs[selected_world] %}
+                        <p class="message">
+                            {% if "schreit:" in line %}
+                                <span class="shout">{{ line }}</span>
+                            {% else %}
+                                {{ line }}
+                            {% endif %}
+                        </p>
+                    {% endfor %}
                 </div>
             </body>
         </html>
-    """, logs=formatted_logs)
-
-@app.route("/<path:filename>")
-def serve_log(filename):
-    return send_from_directory('.', filename)
+    """, logs=logs)
 
 @app.route("/delete/<filename>", methods=["POST"])
 def delete_log(filename):
@@ -129,7 +140,8 @@ def delete_log(filename):
 # Startpunkt für Render oder lokal
 # -------------------------------
 if __name__ == "__main__":
-    # Starte den Fetch-Task in einem separaten Thread
+    import threading
+
     def loop_fetch():
         print("Starte Freewar Chat Tracker (5-Minuten-Takt)...")
         while True:
@@ -140,5 +152,5 @@ if __name__ == "__main__":
     tracking_thread = threading.Thread(target=loop_fetch, daemon=True)
     tracking_thread.start()
 
-    # Starte Webserver auf Port 8080
+    # Starte Webserver
     app.run(host="0.0.0.0", port=8080)
