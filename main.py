@@ -1,14 +1,13 @@
-import os
-import time
 import requests
+import time
+import os
 from bs4 import BeautifulSoup
 from datetime import datetime
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, request
 
-# Flask-App initialisieren
-app = Flask(__name__)
-
-# URLs der Freewar-Welten
+# -------------------------------
+# Chat-Tracking-Konfiguration
+# -------------------------------
 WELTEN = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
 LAST_LINES = {i: set() for i in range(1, 15)}
 LAST_GLOBAL_LINES = set()
@@ -18,35 +17,37 @@ def extract_chat_lines(html):
     p_tags = soup.find_all("p")
     return [p.get_text(separator=" ", strip=True) for p in p_tags if p.get_text(strip=True)]
 
+def is_global_chat(line):
+    return any(f"(Welt {i})" in line for i in range(2, 15))  # Welt 1 ist lokale Quelle, andere sind global
+
 def save_new_lines(welt_nummer, lines):
-    filename = f"welt{welt_nummer}_chatlog.txt"
+    global LAST_GLOBAL_LINES
     new_lines = [line for line in lines if line not in LAST_LINES[welt_nummer]]
+    new_global_lines = [line for line in new_lines if is_global_chat(line)]
+    new_local_lines = [line for line in new_lines if line not in new_global_lines]
 
-    # Global-Chat herausfiltern
-    global_lines = [line for line in new_lines if "(Welt " in line and ")" in line]
-    new_lines = [line for line in new_lines if line not in global_lines]
-
-    # Speichern globaler Chat in extra Datei
-    global_new = [line for line in global_lines if line not in LAST_GLOBAL_LINES]
-    if global_new:
-        with open("global_chatlog.txt", "a", encoding="utf-8") as gf:
-            gf.write(f"--- {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-            for line in global_new:
-                gf.write(f"{line}\n")
-            gf.write("\n")
-        LAST_GLOBAL_LINES.update(global_new)
-
-    # Speichern Welt-spezifischer Chat
-    if new_lines:
+    # Lokale Welt-Logs
+    if new_local_lines:
+        filename = f"welt{welt_nummer}_chatlog.txt"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(filename, "a", encoding="utf-8") as f:
-            f.write(f"--- {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-            for line in new_lines:
+            f.write(f"--- {timestamp} ---\n")
+            for line in new_local_lines:
                 f.write(f"{line}\n")
             f.write("\n")
-        LAST_LINES[welt_nummer].update(new_lines)
-        print(f"[Welt {welt_nummer}] {len(new_lines)} neue Zeile(n) gespeichert.")
-    else:
-        print(f"[Welt {welt_nummer}] Keine neuen Zeilen.")
+        print(f"[Welt {welt_nummer}] {len(new_local_lines)} neue lokale Zeile(n) gespeichert.")
+        LAST_LINES[welt_nummer].update(new_local_lines)
+
+    # Global Chat (nur aus Welt 1 extrahiert)
+    if welt_nummer == 1 and new_global_lines:
+        filename = "global_chatlog.txt"
+        with open(filename, "a", encoding="utf-8") as f:
+            f.write(f"--- {timestamp} ---\n")
+            for line in new_global_lines:
+                f.write(f"{line}\n")
+            f.write("\n")
+        print(f"[GLOBAL] {len(new_global_lines)} neue Zeile(n) gespeichert.")
+        LAST_GLOBAL_LINES.update(new_global_lines)
 
 def fetch_all_worlds():
     for i, url in enumerate(WELTEN, start=1):
@@ -62,35 +63,45 @@ def fetch_all_worlds():
         except Exception as e:
             print(f"[Welt {i}] Fehler beim Abruf: {e}")
 
-# Flask-Routen
+# -------------------------------
+# Flask Webserver
+# -------------------------------
+app = Flask(__name__)
+
 @app.route("/")
 def index():
-    return "Freewar Chat Tracker läuft!"
-
-@app.route("/logs")
-def serve_logs():
     return send_from_directory('.', 'logs.html')
-    
+
 @app.route("/<path:filename>")
-def serve_files(filename):
+def serve_log(filename):
     return send_from_directory('.', filename)
 
-@app.route("/global")
-def serve_global_log():
-    return send_from_directory('.', 'global_chatlog.txt')
+@app.route("/delete/<filename>", methods=["POST"])
+def delete_log(filename):
+    safe_files = [f"welt{i}_chatlog.txt" for i in range(1, 15)] + ["global_chatlog.txt"]
+    if filename not in safe_files:
+        return "Nicht erlaubt", 403
+    try:
+        os.remove(filename)
+        return f"Datei {filename} gelöscht."
+    except Exception as e:
+        return f"Fehler: {e}", 500
 
-# Startlogik
+# -------------------------------
+# Startpunkt für Render oder lokal
+# -------------------------------
 if __name__ == "__main__":
     import threading
 
-    # Hintergrund-Thread für das Abrufen der Chats
-    def chat_loop():
+    def loop_fetch():
+        print("Starte Freewar Chat Tracker (5-Minuten-Takt)...")
         while True:
             fetch_all_worlds()
-            time.sleep(300)  # alle 5 Minuten
+            time.sleep(300)  # 5 Minuten
 
-    threading.Thread(target=chat_loop, daemon=True).start()
+    # Tracker läuft in Thread
+    tracking_thread = threading.Thread(target=loop_fetch, daemon=True)
+    tracking_thread.start()
 
-    # Flask-Server starten
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    # Starte Webserver
+    app.run(host="0.0.0.0", port=8080)
