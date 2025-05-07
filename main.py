@@ -3,7 +3,8 @@ import time
 import os
 from bs4 import BeautifulSoup
 from datetime import datetime
-from flask import Flask, send_from_directory, request, render_template_string
+from flask import Flask, request, render_template_string
+import threading
 
 # -------------------------------
 # Chat-Tracking-Konfiguration
@@ -18,18 +19,18 @@ def extract_chat_lines(html):
     return [p.get_text(separator=" ", strip=True) for p in p_tags if p.get_text(strip=True)]
 
 def is_global_chat(line):
-    return any(f"(Welt {i})" in line for i in range(2, 15))  # Welt 1 ist lokale Quelle, andere sind global
+    return any(f"(Welt {i})" in line for i in range(2, 15))
 
 def save_new_lines(welt_nummer, lines):
     global LAST_GLOBAL_LINES
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_lines = [line for line in lines if line not in LAST_LINES[welt_nummer]]
     new_global_lines = [line for line in new_lines if is_global_chat(line)]
     new_local_lines = [line for line in new_lines if line not in new_global_lines]
 
-    # Lokale Welt-Logs
+    # Lokale Logs
     if new_local_lines:
         filename = f"welt{welt_nummer}_chatlog.txt"
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(filename, "a", encoding="utf-8") as f:
             f.write(f"--- {timestamp} ---\n")
             for line in new_local_lines:
@@ -38,7 +39,7 @@ def save_new_lines(welt_nummer, lines):
         print(f"[Welt {welt_nummer}] {len(new_local_lines)} neue lokale Zeile(n) gespeichert.")
         LAST_LINES[welt_nummer].update(new_local_lines)
 
-    # Global Chat (nur aus Welt 1 extrahiert)
+    # Global Chat (nur Welt 1)
     if welt_nummer == 1 and new_global_lines:
         filename = "global_chatlog.txt"
         with open(filename, "a", encoding="utf-8") as f:
@@ -70,138 +71,122 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    # Holen der Logdateien für alle Welten
+    selected_world = request.args.get("welt", "Globaler Chat")
+    filename = "global_chatlog.txt" if selected_world == "Globaler Chat" else f"{selected_world}_chatlog.txt"
     logs = {}
+
     for i in range(1, 15):
-        try:
-            with open(f"welt{i}_chatlog.txt", "r", encoding="utf-8") as f:
-                logs[f"Welt {i}"] = f.readlines()
-        except FileNotFoundError:
-            logs[f"Welt {i}"] = []
+        weltname = f"Welt{i}"
+        logs[weltname] = f"welt{i}_chatlog.txt"
+    logs["Globaler Chat"] = "global_chatlog.txt"
 
     try:
-        with open("global_chatlog.txt", "r", encoding="utf-8") as f:
-            logs["Globaler Chat"] = f.readlines()
-    except FileNotFoundError:
-        logs["Globaler Chat"] = []
+        with open(filename, encoding="utf-8") as f:
+            lines = f.readlines()
+    except:
+        lines = ["Fehler: Datei konnte nicht geladen werden."]
 
-    return render_template_string("""
-        <html>
-            <head>
-                <title>Freewar Chat Tracker</title>
-                <style>
-                    body { font-family: Arial, sans-serif; }
-                    .chatbox {
-                        width: 80%; 
-                        height: 400px; 
-                        border: 1px solid #ccc; 
-                        margin: 20px auto; 
-                        padding: 10px; 
-                        overflow-y: auto; 
-                        background-color: #f9f9f9;
-                    }
-                    .message { 
-                        margin-bottom: 10px; 
-                    }
-                    .shout {
-                        color: blue; 
-                        font-weight: bold;
-                    }
-                    select { 
-                        font-size: 16px; 
-                        padding: 5px; 
-                    }
-                    .btn {
-                        padding: 10px 20px;
-                        background-color: #007bff;
-                        color: white;
-                        border: none;
-                        cursor: pointer;
-                    }
-                    .btn:hover {
-                        background-color: #0056b3;
-                    }
-                </style>
-                <script>
-                    function toggleAutoRefresh() {
-                        var refreshButton = document.getElementById("autoRefreshBtn");
-                        var isChecked = document.getElementById("autoRefresh").checked;
-                        if (isChecked) {
-                            refreshButton.innerText = "Auto-Refresh An";
-                            refreshButton.style.backgroundColor = "#28a745";
-                        } else {
-                            refreshButton.innerText = "Auto-Refresh Aus";
-                            refreshButton.style.backgroundColor = "#dc3545";
-                        }
-                    }
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Freewar Chat Tracker</title>
+        <meta charset="utf-8">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                padding: 20px;
+            }
+            .chatbox {
+                background: #fff;
+                border: 1px solid #ccc;
+                padding: 15px;
+                height: 500px;
+                overflow-y: scroll;
+                white-space: pre-wrap;
+                font-size: 14px;
+            }
+            .schreit {
+                color: blue;
+                font-weight: bold;
+            }
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+        </style>
+        <script>
+            function toggleRefresh(checkbox) {
+                if (checkbox.checked) {
+                    localStorage.setItem("refresh", "on");
+                    startRefresh();
+                } else {
+                    localStorage.setItem("refresh", "off");
+                    stopRefresh();
+                }
+            }
 
-                    function autoRefresh() {
-                        location.reload();
-                    }
-                </script>
-            </head>
-            <body>
-                <h1>Freewar Chat Tracker</h1>
-                <h2>Wählen Sie eine Welt:</h2>
-                <form action="/" method="get">
-                    <select name="welt" onchange="this.form.submit()">
-                        <option value="Globaler Chat" {% if request.args.get('welt') == 'Globaler Chat' %}selected{% endif %}>Globaler Chat</option>
-                        {% for welt in range(1, 15) %}
-                            <option value="Welt {{ welt }}" {% if request.args.get('welt') == 'Welt {{ welt }}' %}selected{% endif %}>Welt {{ welt }}</option>
-                        {% endfor %}
-                    </select>
-                </form>
+            let intervalId;
+            function startRefresh() {
+                intervalId = setInterval(() => {
+                    const currentUrl = new URL(window.location.href);
+                    window.location.href = currentUrl.toString();
+                }, 10000);
+            }
 
-                <div class="chatbox">
-                    {% set selected_world = request.args.get('welt', 'Globaler Chat') %}
-                    <h3>{{ selected_world }}</h3>
-                    <div>
-                        {% for line in logs[selected_world] %}
-                            <p class="message">
-                                {% if "schreit:" in line %}
-                                    <span class="shout">{{ line }}</span>
-                                {% else %}
-                                    {{ line }}
-                                {% endif %}
-                            </p>
-                        {% endfor %}
-                    </div>
-                </div>
+            function stopRefresh() {
+                clearInterval(intervalId);
+            }
 
-                <label>
-                    <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> Auto-Refresh
-                </label>
-                <button id="autoRefreshBtn" class="btn" onclick="autoRefresh()">Auto-Refresh Aus</button>
-            </body>
-        </html>
-    """, logs=logs)
+            window.onload = function() {
+                const refreshState = localStorage.getItem("refresh");
+                const checkbox = document.getElementById("autorefresh");
+                if (refreshState === "on") {
+                    checkbox.checked = true;
+                    startRefresh();
+                }
+            }
+        </script>
+    </head>
+    <body>
+        <div class="header">
+            <form method="get">
+                <label for="welt">Wähle eine Welt:</label>
+                <select name="welt" onchange="this.form.submit()">
+                    {% for name in logs.keys() %}
+                        <option value="{{ name }}" {% if selected_world == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <label>
+                <input type="checkbox" id="autorefresh" onchange="toggleRefresh(this)">
+                Auto-Refresh (10s)
+            </label>
+        </div>
+        <div class="chatbox">
+            {% for line in lines %}
+                <div class="{% if 'schreit:' in line %}schreit{% endif %}">{{ line.strip() }}</div>
+            {% endfor %}
+        </div>
+    </body>
+    </html>
+    """
 
-@app.route("/delete/<filename>", methods=["POST"])
-def delete_log(filename):
-    safe_files = [f"welt{i}_chatlog.txt" for i in range(1, 15)] + ["global_chatlog.txt"]
-    if filename not in safe_files:
-        return "Nicht erlaubt", 403
-    try:
-        os.remove(filename)
-        return f"Datei {filename} gelöscht."
-    except Exception as e:
-        return f"Fehler: {e}", 500
+    return render_template_string(html, logs=logs, lines=lines, selected_world=selected_world)
 
 # -------------------------------
-# Startpunkt für Render oder lokal
+# Startpunkt
 # -------------------------------
 if __name__ == "__main__":
-    import threading
-
-    def loop_fetch():
+    def start_tracker():
         print("Starte Freewar Chat Tracker (5-Minuten-Takt)...")
         while True:
             fetch_all_worlds()
-            time.sleep(300)  # 5 Minuten
+            time.sleep(300)
 
-    # Tracker läuft in Thread
-    tracking_thread = threading.Thread(target=loop_fetch, daemon=True)
-    tracking_thread.start()
+    thread = threading.Thread(target=start_tracker, daemon=True)
+    thread.start()
 
-    # Starte Webserver
     app.run(host="0.0.0.0", port=8080)
