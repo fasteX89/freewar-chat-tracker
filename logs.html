@@ -1,143 +1,126 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <title>Freewar Chat Tracker</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: white;
-      color: black;
-      margin: 0;
-      padding: 1rem;
-      transition: background-color 0.3s, color 0.3s;
-    }
-    body.dark {
-      background-color: #121212;
-      color: #e0e0e0;
-    }
-    .welt-buttons button {
-      margin: 0.3rem;
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-    }
-    #chatbox {
-      border: 1px solid #ccc;
-      padding: 1rem;
-      margin-top: 1rem;
-      height: 500px;
-      overflow-y: scroll;
-      white-space: pre-line;
-      background: #f9f9f9;
-    }
-    .dark #chatbox {
-      background: #1e1e1e;
-      color: #e0e0e0;
-    }
-    .shout {
-      color: blue;
-    }
-    #topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-    #deleteBtn {
-      margin-top: 1rem;
-      padding: 0.5rem 1rem;
-      background-color: #c00;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-    #deleteBtn:hover {
-      background-color: #a00;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Freewar Chat Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f1f1f1;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .chat-box {
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 500px;
+            overflow-y: auto;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .chat-box p {
+            padding: 10px;
+            margin: 0;
+            border-bottom: 1px solid #ddd;
+        }
+        .chat-box .blue {
+            color: blue;
+        }
+        .chat-box .red {
+            color: red;
+        }
+        .world-buttons {
+            margin-bottom: 20px;
+        }
+        .world-buttons button {
+            padding: 10px;
+            margin-right: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .delete-btn {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .delete-btn:hover {
+            background-color: #e53935;
+        }
+        .search-bar {
+            margin-bottom: 20px;
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+        }
+    </style>
 </head>
 <body>
-  <div id="topbar">
-    <div class="welt-buttons" id="welt-buttons"></div>
-    <label>
-      <input type="checkbox" id="darkToggle" />
-      Dark Mode
-    </label>
-  </div>
+    <h1>Freewar Chat Tracker</h1>
 
-  <div id="chatbox">Lade Chat...</div>
+    <!-- Auswahl für Welten -->
+    <div class="world-buttons">
+        <button onclick="location.href='/welt1'">Welt 1</button>
+        <button onclick="location.href='/welt2'">Welt 2</button>
+        <button onclick="location.href='/welt3'">Welt 3</button>
+        <button onclick="location.href='/welt4'">Welt 4</button>
+        <button onclick="location.href='/global'">Globaler Chat</button>
+    </div>
 
-  <button id="deleteBtn">Aktuelles Log löschen</button>
+    <!-- Suchleiste -->
+    <input type="text" class="search-bar" placeholder="Nachricht suchen" id="search-bar">
 
-  <script>
-    const chatbox = document.getElementById("chatbox");
-    const buttonsDiv = document.getElementById("welt-buttons");
-    const darkToggle = document.getElementById("darkToggle");
-    const deleteBtn = document.getElementById("deleteBtn");
+    <!-- Chat Box -->
+    <div class="chat-box" id="chat-box">
+        <!-- Dynamisch generierter Chat-Content -->
+    </div>
 
-    let currentWelt = "global";
+    <!-- Löschen Button für die aktuell angezeigte Welt -->
+    <form action="/delete" method="POST">
+        <input type="hidden" name="filename" id="filename-input">
+        <button type="submit" class="delete-btn">Löschen</button>
+    </form>
 
-    function updateButtons() {
-      for (let i = 1; i <= 14; i++) {
-        const btn = document.createElement("button");
-        btn.innerText = "Welt " + i;
-        btn.onclick = () => {
-          currentWelt = "welt" + i;
-          fetchChat();
-        };
-        buttonsDiv.appendChild(btn);
-      }
-      const globalBtn = document.createElement("button");
-      globalBtn.innerText = "Global";
-      globalBtn.onclick = () => {
-        currentWelt = "global";
-        fetchChat();
-      };
-      buttonsDiv.appendChild(globalBtn);
-    }
+    <script>
+        // JavaScript für Live-Suche und dynamische Chat-Anzeige
+        let chatBox = document.getElementById("chat-box");
 
-    function fetchChat() {
-      fetch(`/api/chat/${currentWelt}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.error) {
-            chatbox.innerText = "Fehler: " + data.error;
-            return;
-          }
-          chatbox.innerHTML = data.lines.map(line =>
-            line.includes("schreit:")
-              ? `<span class="shout">${line}</span>`
-              : line
-          ).join("");
-          chatbox.scrollTop = chatbox.scrollHeight;
+        document.getElementById("search-bar").addEventListener("input", function() {
+            let query = this.value.toLowerCase();
+            let messages = chatBox.getElementsByTagName("p");
+            for (let message of messages) {
+                if (message.innerText.toLowerCase().includes(query)) {
+                    message.style.display = "";
+                } else {
+                    message.style.display = "none";
+                }
+            }
         });
-    }
 
-    deleteBtn.addEventListener("click", () => {
-      const filename = currentWelt === "global" ? "global_chatlog.txt" : `${currentWelt}_chatlog.txt`;
-      if (confirm(`Log-Datei für ${currentWelt} wirklich löschen?`)) {
-        fetch(`/delete/${filename}`, { method: "POST" })
-          .then(res => res.text())
-          .then(msg => {
-            alert(msg);
-            fetchChat();
-          });
-      }
-    });
+        // Funktion zum Aktualisieren der Chat-Nachrichten
+        function updateChat(content) {
+            chatBox.innerHTML = "";
+            content.forEach(line => {
+                let p = document.createElement("p");
+                if (line.includes("schreit:")) {
+                    p.classList.add("blue");
+                }
+                p.textContent = line;
+                chatBox.appendChild(p);
+            });
+        }
 
-    setInterval(fetchChat, 10000);
-    updateButtons();
-    fetchChat();
-
-    darkToggle.addEventListener("change", () => {
-      document.body.classList.toggle("dark", darkToggle.checked);
-      localStorage.setItem("darkmode", darkToggle.checked ? "1" : "0");
-    });
-
-    if (localStorage.getItem("darkmode") === "1") {
-      darkToggle.checked = true;
-      document.body.classList.add("dark");
-    }
-  </script>
+        // Funktion zum Setzen des Dateinamens für Löschen
+        function setFilename(filename) {
+            document.getElementById("filename-input").value = filename;
+        }
+    </script>
 </body>
 </html>
