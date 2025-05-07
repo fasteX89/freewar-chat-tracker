@@ -90,37 +90,88 @@ def index():
             <head>
                 <title>Freewar Chat Tracker</title>
                 <style>
-                    .shout { color: blue; font-weight: bold; }
-                    .message { margin-bottom: 10px; }
-                    select { font-size: 16px; padding: 5px; }
+                    body { font-family: Arial, sans-serif; }
+                    .chatbox {
+                        width: 80%; 
+                        height: 400px; 
+                        border: 1px solid #ccc; 
+                        margin: 20px auto; 
+                        padding: 10px; 
+                        overflow-y: auto; 
+                        background-color: #f9f9f9;
+                    }
+                    .message { 
+                        margin-bottom: 10px; 
+                    }
+                    .shout {
+                        color: blue; 
+                        font-weight: bold;
+                    }
+                    select { 
+                        font-size: 16px; 
+                        padding: 5px; 
+                    }
+                    .btn {
+                        padding: 10px 20px;
+                        background-color: #007bff;
+                        color: white;
+                        border: none;
+                        cursor: pointer;
+                    }
+                    .btn:hover {
+                        background-color: #0056b3;
+                    }
                 </style>
+                <script>
+                    function toggleAutoRefresh() {
+                        var refreshButton = document.getElementById("autoRefreshBtn");
+                        var isChecked = document.getElementById("autoRefresh").checked;
+                        if (isChecked) {
+                            refreshButton.innerText = "Auto-Refresh An";
+                            refreshButton.style.backgroundColor = "#28a745";
+                        } else {
+                            refreshButton.innerText = "Auto-Refresh Aus";
+                            refreshButton.style.backgroundColor = "#dc3545";
+                        }
+                    }
+
+                    function autoRefresh() {
+                        location.reload();
+                    }
+                </script>
             </head>
             <body>
                 <h1>Freewar Chat Tracker</h1>
                 <h2>Wählen Sie eine Welt:</h2>
                 <form action="/" method="get">
-                    <select name="welt">
-                        <option value="Globaler Chat">Globaler Chat</option>
+                    <select name="welt" onchange="this.form.submit()">
+                        <option value="Globaler Chat" {% if request.args.get('welt') == 'Globaler Chat' %}selected{% endif %}>Globaler Chat</option>
                         {% for welt in range(1, 15) %}
-                            <option value="Welt {{ welt }}">Welt {{ welt }}</option>
+                            <option value="Welt {{ welt }}" {% if request.args.get('welt') == 'Welt {{ welt }}' %}selected{% endif %}>Welt {{ welt }}</option>
                         {% endfor %}
                     </select>
-                    <input type="submit" value="Anzeigen">
                 </form>
 
-                <h2>Chat Nachrichten:</h2>
-                {% set selected_world = request.args.get('welt', 'Globaler Chat') %}
-                <div>
-                    {% for line in logs[selected_world] %}
-                        <p class="message">
-                            {% if "schreit:" in line %}
-                                <span class="shout">{{ line }}</span>
-                            {% else %}
-                                {{ line }}
-                            {% endif %}
-                        </p>
-                    {% endfor %}
+                <div class="chatbox">
+                    {% set selected_world = request.args.get('welt', 'Globaler Chat') %}
+                    <h3>{{ selected_world }}</h3>
+                    <div>
+                        {% for line in logs[selected_world] %}
+                            <p class="message">
+                                {% if "schreit:" in line %}
+                                    <span class="shout">{{ line }}</span>
+                                {% else %}
+                                    {{ line }}
+                                {% endif %}
+                            </p>
+                        {% endfor %}
+                    </div>
                 </div>
+
+                <label>
+                    <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> Auto-Refresh
+                </label>
+                <button id="autoRefreshBtn" class="btn" onclick="autoRefresh()">Auto-Refresh Aus</button>
             </body>
         </html>
     """, logs=logs)
