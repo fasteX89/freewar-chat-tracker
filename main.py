@@ -70,6 +70,10 @@ def index():
 @app.route("/logs")
 def serve_logs():
     return send_from_directory('.', 'logs.html')
+    
+@app.route("/<path:filename>")
+def serve_files(filename):
+    return send_from_directory('.', filename)
 
 @app.route("/global")
 def serve_global_log():
