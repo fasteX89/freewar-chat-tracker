@@ -6,9 +6,6 @@ from datetime import datetime
 from flask import Flask, request, render_template_string
 import threading
 
-# -------------------------------
-# Chat-Tracking-Konfiguration
-# -------------------------------
 WELTEN = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
 LAST_LINES = {i: set() for i in range(1, 15)}
 LAST_GLOBAL_LINES = set()
@@ -64,20 +61,14 @@ def fetch_all_worlds():
         except Exception as e:
             print(f"[Welt {i}] Fehler beim Abruf: {e}")
 
-# -------------------------------
-# Flask Webserver
-# -------------------------------
 app = Flask(__name__)
 
 @app.route("/")
 def index():
     selected_world = request.args.get("welt", "Globaler Chat")
     filename = "global_chatlog.txt" if selected_world == "Globaler Chat" else f"{selected_world}_chatlog.txt"
-    logs = {}
 
-    for i in range(1, 15):
-        weltname = f"Welt{i}"
-        logs[weltname] = f"welt{i}_chatlog.txt"
+    logs = {f"Welt{i}": f"welt{i}_chatlog.txt" for i in range(1, 15)}
     logs["Globaler Chat"] = "global_chatlog.txt"
 
     try:
@@ -90,8 +81,8 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Freewar Chat Tracker</title>
         <meta charset="utf-8">
+        <title>Freewar Chat Tracker</title>
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -111,10 +102,19 @@ def index():
                 color: blue;
                 font-weight: bold;
             }
-            .header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
+            .buttons {
+                margin-bottom: 10px;
+            }
+            .buttons form {
+                display: inline;
+            }
+            .buttons button {
+                margin-right: 5px;
+                padding: 5px 10px;
+            }
+            .active {
+                font-weight: bold;
+                background-color: #ddd;
             }
         </style>
         <script>
@@ -131,8 +131,7 @@ def index():
             let intervalId;
             function startRefresh() {
                 intervalId = setInterval(() => {
-                    const currentUrl = new URL(window.location.href);
-                    window.location.href = currentUrl.toString();
+                    location.reload();
                 }, 10000);
             }
 
@@ -151,16 +150,14 @@ def index():
         </script>
     </head>
     <body>
-        <div class="header">
+        <div class="buttons">
+            {% for name in logs.keys() %}
             <form method="get">
-                <label for="welt">Wähle eine Welt:</label>
-                <select name="welt" onchange="this.form.submit()">
-                    {% for name in logs.keys() %}
-                        <option value="{{ name }}" {% if selected_world == name %}selected{% endif %}>{{ name }}</option>
-                    {% endfor %}
-                </select>
+                <input type="hidden" name="welt" value="{{ name }}">
+                <button type="submit" class="{% if selected_world == name %}active{% endif %}">{{ name }}</button>
             </form>
-            <label>
+            {% endfor %}
+            <label style="margin-left: 20px;">
                 <input type="checkbox" id="autorefresh" onchange="toggleRefresh(this)">
                 Auto-Refresh (10s)
             </label>
@@ -176,9 +173,6 @@ def index():
 
     return render_template_string(html, logs=logs, lines=lines, selected_world=selected_world)
 
-# -------------------------------
-# Startpunkt
-# -------------------------------
 if __name__ == "__main__":
     def start_tracker():
         print("Starte Freewar Chat Tracker (5-Minuten-Takt)...")
