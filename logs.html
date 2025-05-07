@@ -67,10 +67,10 @@
 
     <!-- Auswahl für Welten -->
     <div class="world-buttons">
-        <button onclick="location.href='/welt1'">Welt 1</button>
-        <button onclick="location.href='/welt2'">Welt 2</button>
-        <button onclick="location.href='/welt3'">Welt 3</button>
-        <button onclick="location.href='/welt4'">Welt 4</button>
+        <!-- Buttons für alle 14 Welten -->
+        {% for i in range(1, 15) %}
+            <button onclick="location.href='/welt{{ i }}'">Welt {{ i }}</button>
+        {% endfor %}
         <button onclick="location.href='/global'">Globaler Chat</button>
     </div>
 
