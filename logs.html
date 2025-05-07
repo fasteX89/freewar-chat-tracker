@@ -43,6 +43,17 @@
       align-items: center;
       margin-bottom: 1rem;
     }
+    #deleteBtn {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #c00;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    #deleteBtn:hover {
+      background-color: #a00;
+    }
   </style>
 </head>
 <body>
@@ -56,10 +67,13 @@
 
   <div id="chatbox">Lade Chat...</div>
 
+  <button id="deleteBtn">Aktuelles Log löschen</button>
+
   <script>
     const chatbox = document.getElementById("chatbox");
     const buttonsDiv = document.getElementById("welt-buttons");
     const darkToggle = document.getElementById("darkToggle");
+    const deleteBtn = document.getElementById("deleteBtn");
 
     let currentWelt = "global";
 
@@ -99,7 +113,19 @@
         });
     }
 
-    setInterval(fetchChat, 10000); // alle 10 Sekunden aktualisieren
+    deleteBtn.addEventListener("click", () => {
+      const filename = currentWelt === "global" ? "global_chatlog.txt" : `${currentWelt}_chatlog.txt`;
+      if (confirm(`Log-Datei für ${currentWelt} wirklich löschen?`)) {
+        fetch(`/delete/${filename}`, { method: "POST" })
+          .then(res => res.text())
+          .then(msg => {
+            alert(msg);
+            fetchChat();
+          });
+      }
+    });
+
+    setInterval(fetchChat, 10000);
     updateButtons();
     fetchChat();
 
@@ -108,7 +134,6 @@
       localStorage.setItem("darkmode", darkToggle.checked ? "1" : "0");
     });
 
-    // Darkmode beim Start
     if (localStorage.getItem("darkmode") === "1") {
       darkToggle.checked = true;
       document.body.classList.add("dark");
