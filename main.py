@@ -81,7 +81,7 @@ if __name__ == "__main__":
     def loop_fetch():
         while True:
             fetch_all_worlds()
-            time.sleep(300)
+            time.sleep(60)
 
     threading.Thread(target=loop_fetch, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
