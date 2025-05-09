@@ -3,9 +3,12 @@ import time
 import os
 from bs4 import BeautifulSoup
 from datetime import datetime
-from flask import Flask, request, render_template_string, redirect, url_for
+from flask import Flask, send_from_directory, request, render_template_string
 import threading
 
+# -------------------------------
+# Chat-Tracking-Konfiguration
+# -------------------------------
 WELTEN = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
 LAST_LINES = {i: set() for i in range(1, 15)}
 LAST_GLOBAL_LINES = set()
@@ -16,15 +19,17 @@ def extract_chat_lines(html):
     return [p.get_text(separator=" ", strip=True) for p in p_tags if p.get_text(strip=True)]
 
 def is_global_chat(line):
-    return any(f"(Welt {i})" in line for i in range(2, 15))
+    return any(f"(Welt {i})" in line for i in range(2, 15))  # Welt 1 ist lokale Quelle, andere sind global
 
 def save_new_lines(welt_nummer, lines):
     global LAST_GLOBAL_LINES
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_lines = [line for line in lines if line not in LAST_LINES[welt_nummer]]
     new_global_lines = [line for line in new_lines if is_global_chat(line)]
     new_local_lines = [line for line in new_lines if line not in new_global_lines]
 
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Lokale Welt-Logs
     if new_local_lines:
         filename = f"welt{welt_nummer}_chatlog.txt"
         with open(filename, "a", encoding="utf-8") as f:
@@ -35,6 +40,7 @@ def save_new_lines(welt_nummer, lines):
         print(f"[Welt {welt_nummer}] {len(new_local_lines)} neue lokale Zeile(n) gespeichert.")
         LAST_LINES[welt_nummer].update(new_local_lines)
 
+    # Global Chat (nur aus Welt 1 extrahiert)
     if welt_nummer == 1 and new_global_lines:
         filename = "global_chatlog.txt"
         with open(filename, "a", encoding="utf-8") as f:
@@ -59,161 +65,41 @@ def fetch_all_worlds():
         except Exception as e:
             print(f"[Welt {i}] Fehler beim Abruf: {e}")
 
+# -------------------------------
+# Flask Webserver
+# -------------------------------
 app = Flask(__name__)
 
 @app.route("/")
 def index():
-    selected_world = request.args.get("welt", "Globaler Chat")
-    filename = "global_chatlog.txt" if selected_world == "Globaler Chat" else f"{selected_world}_chatlog.txt"
+    return send_from_directory('.', 'logs.html')
 
-    logs = {f"Welt{i}": f"welt{i}_chatlog.txt" for i in range(1, 15)}
-    logs["Globaler Chat"] = "global_chatlog.txt"
-
-    try:
-        with open(filename, encoding="utf-8") as f:
-            lines = f.readlines()
-    except:
-        lines = ["Fehler: Datei konnte nicht geladen werden."]
-
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Freewar Chat Tracker</title>
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                background-color: #f4f4f4;
-                padding: 20px;
-            }
-            .chatbox {
-                background: #fff;
-                border: 1px solid #ccc;
-                padding: 15px;
-                height: 500px;
-                overflow-y: scroll;
-                white-space: pre-wrap;
-                font-size: 14px;
-            }
-            .schreit {
-                color: blue;
-                font-weight: bold;
-            }
-            .buttons {
-                margin-bottom: 10px;
-            }
-            .buttons form {
-                display: inline;
-                margin-right: 5px;
-            }
-            .buttons button {
-                padding: 5px 10px;
-            }
-            .active {
-                font-weight: bold;
-                background-color: #ddd;
-            }
-            .search-container {
-                margin-bottom: 10px;
-            }
-            input[type="text"] {
-                padding: 5px;
-                width: 300px;
-            }
-        </style>
-        <script>
-            function toggleRefresh(checkbox) {
-                if (checkbox.checked) {
-                    localStorage.setItem("refresh", "on");
-                    startRefresh();
-                } else {
-                    localStorage.setItem("refresh", "off");
-                    stopRefresh();
-                }
-            }
-
-            let intervalId;
-            function startRefresh() {
-                intervalId = setInterval(() => {
-                    location.reload();
-                }, 10000);
-            }
-
-            function stopRefresh() {
-                clearInterval(intervalId);
-            }
-
-            function searchChat() {
-                const query = document.getElementById("search").value.toLowerCase();
-                const lines = document.querySelectorAll(".chatline");
-                lines.forEach(line => {
-                    if (line.textContent.toLowerCase().includes(query)) {
-                        line.style.display = "block";
-                    } else {
-                        line.style.display = "none";
-                    }
-                });
-            }
-
-            window.onload = function() {
-                const refreshState = localStorage.getItem("refresh");
-                const checkbox = document.getElementById("autorefresh");
-                if (refreshState === "on") {
-                    checkbox.checked = true;
-                    startRefresh();
-                }
-            }
-        </script>
-    </head>
-    <body>
-        <div class="buttons">
-            {% for name, file in logs.items() %}
-                <form method="get" style="display:inline;">
-                    <input type="hidden" name="welt" value="{{ name }}">
-                    <button type="submit" class="{% if selected_world == name %}active{% endif %}">{{ name }}</button>
-                </form>
-                <form method="post" action="/delete/{{ file }}" style="display:inline;">
-                    <button title="Löschen" onclick="return confirm('Datei wirklich löschen?')">🗑️</button>
-                </form>
-            {% endfor %}
-            <label style="margin-left: 20px;">
-                <input type="checkbox" id="autorefresh" onchange="toggleRefresh(this)">
-                Auto-Refresh (10s)
-            </label>
-        </div>
-        <div class="search-container">
-            <input type="text" id="search" placeholder="Nachricht durchsuchen..." onkeyup="searchChat()">
-        </div>
-        <div class="chatbox">
-            {% for line in lines %}
-                <div class="chatline {% if 'schreit:' in line %}schreit{% endif %}">{{ line.strip() }}</div>
-            {% endfor %}
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html, logs=logs, lines=lines, selected_world=selected_world)
+@app.route("/<path:filename>")
+def serve_log(filename):
+    return send_from_directory('.', filename)
 
 @app.route("/delete/<filename>", methods=["POST"])
-def delete_file(filename):
-    allowed_files = [f"welt{i}_chatlog.txt" for i in range(1, 15)] + ["global_chatlog.txt"]
-    if filename not in allowed_files:
+def delete_log(filename):
+    safe_files = [f"welt{i}_chatlog.txt" for i in range(1, 15)] + ["global_chatlog.txt"]
+    if filename not in safe_files:
         return "Nicht erlaubt", 403
     try:
         os.remove(filename)
-        return redirect(url_for("index"))
+        return f"Datei {filename} gelöscht."
     except Exception as e:
-        return f"Fehler beim Löschen: {e}", 500
+        return f"Fehler: {e}", 500
 
+# -------------------------------
+# Startpunkt für Render oder lokal
+# -------------------------------
 if __name__ == "__main__":
-    def start_tracker():
+    def loop_fetch():
         print("Starte Freewar Chat Tracker (5-Minuten-Takt)...")
         while True:
             fetch_all_worlds()
-            time.sleep(60)
+            time.sleep(300)
 
-    thread = threading.Thread(target=start_tracker, daemon=True)
-    thread.start()
+    tracking_thread = threading.Thread(target=loop_fetch, daemon=True)
+    tracking_thread.start()
 
     app.run(host="0.0.0.0", port=8080)
