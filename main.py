@@ -211,7 +211,7 @@ if __name__ == "__main__":
         print("Starte Freewar Chat Tracker (5-Minuten-Takt)...")
         while True:
             fetch_all_worlds()
-            time.sleep(300)
+            time.sleep(60)
 
     thread = threading.Thread(target=start_tracker, daemon=True)
     thread.start()
