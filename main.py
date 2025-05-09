@@ -61,7 +61,6 @@ def fetch_all_worlds():
         except Exception as e:
             print(f"[Welt {i}] Fehler beim Abruf: {e}")
 
-# Flask App
 app = Flask(__name__)
 
 @app.route("/", methods=["GET", "POST"])
@@ -88,10 +87,13 @@ def index():
                 color: #f0f0f0;
                 font-family: monospace;
                 padding: 20px;
+                transition: background-color 0.3s, color 0.3s;
             }
-            h1 {
-                color: #f0db4f;
+            body.light {
+                background-color: #ffffff;
+                color: #000000;
             }
+            h1 { color: #f0db4f; }
             .button {
                 background-color: #4d4dff;
                 color: white;
@@ -101,16 +103,12 @@ def index():
                 border-radius: 4px;
                 cursor: pointer;
             }
-            .button:hover {
-                background-color: #3333cc;
-            }
+            .button:hover { background-color: #3333cc; }
             .delete-button {
                 background-color: #ff4d4d;
                 margin-top: 10px;
             }
-            .delete-button:hover {
-                background-color: #cc0000;
-            }
+            .delete-button:hover { background-color: #cc0000; }
             pre {
                 background-color: #2e2e2e;
                 border: 1px solid #444;
@@ -120,9 +118,27 @@ def index():
                 overflow-y: scroll;
                 white-space: pre-wrap;
             }
+            body.light pre {
+                background-color: #f4f4f4;
+                border: 1px solid #ccc;
+            }
+            #search {
+                margin-top: 15px;
+                padding: 5px;
+                width: 300px;
+                font-size: 14px;
+                border-radius: 4px;
+                border: 1px solid #888;
+            }
+            #toggleDark {
+                float: right;
+                background-color: #888;
+                color: white;
+            }
         </style>
     </head>
     <body>
+        <button id="toggleDark" class="button">🌙 Dark Mode</button>
         <h1>Freewar Chat Tracker</h1>
         <div>
             <a href="/?welt=global"><button class="button">Global</button></a>
@@ -133,8 +149,52 @@ def index():
         <form method="POST" action="/delete?welt={{selected}}">
             <button type="submit" class="button delete-button">Löschen</button>
         </form>
+        <input type="text" id="search" placeholder="Suche in Nachrichten...">
         <hr>
-        <pre>{{ logs|safe }}</pre>
+        <pre id="logbox">{{ logs|safe }}</pre>
+
+        <script>
+            // Dark Mode Toggle
+            const toggleBtn = document.getElementById('toggleDark');
+            const body = document.body;
+
+            function applyTheme() {
+                if (localStorage.getItem("theme") === "light") {
+                    body.classList.add("light");
+                    toggleBtn.textContent = "🌙 Dark Mode";
+                } else {
+                    body.classList.remove("light");
+                    toggleBtn.textContent = "☀️ Light Mode";
+                }
+            }
+
+            toggleBtn.addEventListener("click", () => {
+                if (body.classList.contains("light")) {
+                    localStorage.setItem("theme", "dark");
+                } else {
+                    localStorage.setItem("theme", "light");
+                }
+                applyTheme();
+            });
+
+            applyTheme();
+
+            // Suche
+            const searchInput = document.getElementById("search");
+            const logbox = document.getElementById("logbox");
+            const fullText = logbox.innerHTML;
+
+            searchInput.addEventListener("input", () => {
+                const term = searchInput.value.toLowerCase();
+                if (!term) {
+                    logbox.innerHTML = fullText;
+                } else {
+                    const lines = fullText.split(/<br>|\\n|\\r/);
+                    const filtered = lines.filter(line => line.toLowerCase().includes(term));
+                    logbox.innerHTML = filtered.join("<br>");
+                }
+            });
+        </script>
     </body>
     </html>
     """, logs=logs, selected=selected)
