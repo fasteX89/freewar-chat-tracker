@@ -13,13 +13,22 @@ WELTEN = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in r
 LAST_LINES = {i: set() for i in range(1, 15)}
 LAST_GLOBAL_LINES = set()
 
+# Globale Marker
+GLOBAL_MARKERS = [f"(Welt {i}):" for i in range(1, 15)] + ["(Chaos-Welt)", "(AF):", "(RP):"]
+
 def extract_chat_lines(html):
     soup = BeautifulSoup(html, "html.parser")
     p_tags = soup.find_all("p")
     return [p.get_text(separator=" ", strip=True) for p in p_tags if p.get_text(strip=True)]
 
 def is_global_chat(line):
-    return any(f"(Welt {i})" in line for i in range(2, 15))  # Welt 1 ist lokale Quelle, andere sind global
+    return any(marker in line for marker in GLOBAL_MARKERS)
+
+def format_message(message):
+    """ Hebt 'schreit:' hervor """
+    if "schreit:" in message:
+        return f'<span style="color: #4da6ff;">{message}</span>'
+    return message
 
 def save_new_lines(welt_nummer, lines):
     global LAST_GLOBAL_LINES
@@ -29,7 +38,7 @@ def save_new_lines(welt_nummer, lines):
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Lokale Welt-Logs
+    # Lokale Logs
     if new_local_lines:
         filename = f"welt{welt_nummer}_chatlog.txt"
         with open(filename, "a", encoding="utf-8") as f:
@@ -37,10 +46,10 @@ def save_new_lines(welt_nummer, lines):
             for line in new_local_lines:
                 f.write(f"{line}\n")
             f.write("\n")
-        print(f"[Welt {welt_nummer}] {len(new_local_lines)} neue lokale Zeile(n) gespeichert.")
         LAST_LINES[welt_nummer].update(new_local_lines)
+        print(f"[Welt {welt_nummer}] {len(new_local_lines)} neue lokale Zeile(n) gespeichert.")
 
-    # Global Chat (nur aus Welt 1 extrahiert)
+    # Global nur in Welt 1
     if welt_nummer == 1 and new_global_lines:
         filename = "global_chatlog.txt"
         with open(filename, "a", encoding="utf-8") as f:
@@ -48,8 +57,8 @@ def save_new_lines(welt_nummer, lines):
             for line in new_global_lines:
                 f.write(f"{line}\n")
             f.write("\n")
-        print(f"[GLOBAL] {len(new_global_lines)} neue Zeile(n) gespeichert.")
         LAST_GLOBAL_LINES.update(new_global_lines)
+        print(f"[GLOBAL] {len(new_global_lines)} neue Zeile(n) gespeichert.")
 
 def fetch_all_worlds():
     for i, url in enumerate(WELTEN, start=1):
@@ -72,11 +81,73 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return send_from_directory('.', 'logs.html')
+    logs = {}
+    for i in range(1, 15):
+        try:
+            with open(f"welt{i}_chatlog.txt", "r", encoding="utf-8") as file:
+                logs[f"Welt {i}"] = file.read()
+        except FileNotFoundError:
+            logs[f"Welt {i}"] = ""
 
-@app.route("/<path:filename>")
-def serve_log(filename):
-    return send_from_directory('.', filename)
+    try:
+        with open("global_chatlog.txt", "r", encoding="utf-8") as file:
+            logs["Global"] = file.read()
+    except FileNotFoundError:
+        logs["Global"] = ""
+
+    return render_template_string("""
+    <html>
+    <head>
+        <title>Freewar Chat Tracker</title>
+        <style>
+            body {
+                background-color: #1e1e1e;
+                color: #f0f0f0;
+                font-family: monospace;
+                padding: 20px;
+            }
+            h1, h2 {
+                color: #f0db4f;
+            }
+            .welt {
+                margin-bottom: 30px;
+                border: 1px solid #333;
+                padding: 10px;
+                background-color: #2e2e2e;
+                border-radius: 8px;
+            }
+            .button {
+                background-color: #ff4d4d;
+                color: white;
+                padding: 5px 10px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                margin-top: 5px;
+            }
+            .button:hover {
+                background-color: #e60000;
+            }
+            pre {
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Freewar Chat Tracker</h1>
+        {% for welt, content in logs.items() %}
+            <div class="welt">
+                <h2>{{ welt }}</h2>
+                <form method="POST" action="/delete/{{ 'global_chatlog.txt' if welt == 'Global' else 'welt' + welt.split(' ')[1] + '_chatlog.txt' }}">
+                    <button class="button" type="submit">Löschen</button>
+                </form>
+                <pre>{{ content | safe }}</pre>
+            </div>
+        {% endfor %}
+    </body>
+    </html>
+    """, logs=logs)
 
 @app.route("/delete/<filename>", methods=["POST"])
 def delete_log(filename):
@@ -85,12 +156,12 @@ def delete_log(filename):
         return "Nicht erlaubt", 403
     try:
         os.remove(filename)
-        return f"Datei {filename} gelöscht."
+        return f"Datei {filename} gelöscht. <a href='/'>Zurück</a>"
     except Exception as e:
         return f"Fehler: {e}", 500
 
 # -------------------------------
-# Startpunkt für Render oder lokal
+# Startpunkt
 # -------------------------------
 if __name__ == "__main__":
     def loop_fetch():
