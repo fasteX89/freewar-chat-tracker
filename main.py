@@ -10,7 +10,7 @@ WELTEN = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in r
 LAST_LINES = {i: set() for i in range(1, 15)}
 LAST_GLOBAL_LINES = set()
 
-GLOBAL_MARKERS = [f"(Welt {i}):" for i in range(1, 15)] + ["(Chaos-Welt)", "(AF):", "(RP):"]
+GLOBAL_MARKERS = [f"(Welt {i}):" for i in range(1, 15)] + ["(Chaos-Welt)", "(Welt AF):", "(RP):"]
 
 def extract_chat_lines(html):
     soup = BeautifulSoup(html, "html.parser")
