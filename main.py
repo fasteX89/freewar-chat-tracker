@@ -24,7 +24,7 @@ def is_global_chat(line):
         "(Welt 1):", "(Welt 2):", "(Welt 3):", "(Welt 4):", "(Welt 5):",
         "(Welt 6):", "(Welt 7):", "(Welt 8):", "(Welt 9):", "(Welt 10):",
         "(Welt 11):", "(Welt 12):", "(Welt 13):", "(Welt 14):",
-        "(Chaos-Welt)", "(AF):", "(RP):"
+        "(Chaos-Welt)", "(Welt AF):", "(Welt RP):"
     ])
 
 def format_message(message):
