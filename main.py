@@ -2,18 +2,15 @@ import requests
 import time
 import os
 from bs4 import BeautifulSoup
-from datetime import datetime
-from flask import Flask, send_from_directory, request, render_template_string
+from datetime import datetime, timedelta
+from flask import Flask, request, render_template_string
 import threading
 import html
 
 WELTEN = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
 LAST_LINES = {i: set() for i in range(1, 15)}
 LAST_GLOBAL_LINES = set()
-
-GLOBAL_PATTERNS = [
-    f"(Welt {i}):" for i in range(1, 15)
-] + ["(Chaos-Welt)", "(Welt AF):", "(Welt RP):"]
+GLOBAL_PATTERNS = [f"(Welt {i}):" for i in range(1, 15)] + ["(Chaos-Welt)", "(AF):", "(RP):"]
 
 def extract_chat_lines(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
@@ -49,6 +46,42 @@ def save_new_lines(welt_nummer, lines):
             f.write("\n")
         LAST_GLOBAL_LINES.update(new_global_lines)
 
+def clean_old_entries(file_path):
+    if not os.path.exists(file_path):
+        return
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            blocks = f.read().split("\n\n")
+
+        filtered_blocks = []
+        now = datetime.now()
+
+        for block in blocks:
+            if block.strip() == "":
+                continue
+            lines = block.strip().splitlines()
+            if lines[0].startswith("--- "):
+                try:
+                    timestamp = datetime.strptime(lines[0][4:], "%Y-%m-%d %H:%M:%S")
+                    if now - timestamp <= timedelta(hours=48):
+                        filtered_blocks.append(block)
+                except:
+                    filtered_blocks.append(block)
+            else:
+                filtered_blocks.append(block)
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("\n\n".join(filtered_blocks).strip() + "\n")
+
+    except Exception as e:
+        print(f"[Cleaner] Fehler beim Reinigen von {file_path}: {e}")
+
+def cleanup_all_logs():
+    for i in range(1, 15):
+        clean_old_entries(f"welt{i}_chatlog.txt")
+    clean_old_entries("global_chatlog.txt")
+
 app = Flask(__name__)
 
 @app.route("/")
@@ -70,7 +103,6 @@ def index():
             except FileNotFoundError:
                 raw_logs = f"Keine Nachrichten für Welt {welt_param} gefunden."
 
-    # HTML Escaping und Markierung für "schreit:"
     lines = raw_logs.splitlines()
     lines_html = []
     for line in lines:
@@ -115,9 +147,6 @@ def index():
                 .button:hover {
                     background-color: #666;
                 }
-                .delete-button {
-                    background-color: #d9534f;
-                }
                 .search-box {
                     margin: 10px 0;
                 }
@@ -146,12 +175,6 @@ def index():
                 {% endfor %}
                 <a href="/?welt=global"><button class="button">🌐 Global</button></a>
             </div>
-
-            <br>
-            <form method="POST" action="/delete_all">
-                <input type="password" name="pw" placeholder="Passwort zum Löschen" required>
-                <button type="submit" class="button delete-button">Alle Chats löschen</button>
-            </form>
 
             <div class="search-box">
                 <input type="text" id="searchInput" class="button" placeholder="Suche...">
@@ -190,24 +213,6 @@ def index():
         </html>
     """, logs=logs_html)
 
-@app.route("/delete_all", methods=["POST"])
-def delete_all_logs():
-    password = request.form.get("pw")
-    if password != "FSw356t&":
-        return "❌ Falsches Passwort. <a href='/'>Zurück</a>", 403
-
-    for i in range(1, 15):
-        try:
-            os.remove(f"welt{i}_chatlog.txt")
-        except FileNotFoundError:
-            pass
-    try:
-        os.remove("global_chatlog.txt")
-    except FileNotFoundError:
-        pass
-
-    return "✅ Alle Chatlogs wurden gelöscht. <a href='/'>Zurück</a>"
-
 def fetch_all_worlds():
     for i, url in enumerate(WELTEN, start=1):
         try:
@@ -224,7 +229,8 @@ if __name__ == "__main__":
     def background_loop():
         while True:
             fetch_all_worlds()
-            time.sleep(300)
+            cleanup_all_logs()
+            time.sleep(300)  # Alle 5 Minuten
 
     threading.Thread(target=background_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
