@@ -16,8 +16,8 @@ LAST_LINES   = {i: set() for i in range(1, 15)}
 LAST_GLOBAL  = set()
 
 GLOBAL_MARKER = (
-    [f"(Welt {i}):" for i in range(2, 15)] +
-    ["(Chaos-Welt)", "(Welt AF):", "(Welt RP):"]
+    [f"(Welt {i}):" for i in range(1, 15)]   #  ← 1 bis 14
+    + ["(Chaos-Welt)", "(Welt AF):", "(Welt RP):"]
 )
 
 # ── Hilfsfunktionen ──────────────────────────────────────────────
