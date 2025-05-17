@@ -31,9 +31,26 @@ def is_global(line:str) -> bool:
     return any(k in line for k in GLOBAL_MARKER)
 
 def store_lines(welt:int, lines:list[str]):
-    if not lines: return
-    data=[{"welt":welt,"timestamp":datetime.utcnow().isoformat(),"message":l} for l in lines]
-    sb.table(TABLE).insert(data).execute()
+    """
+    Insert only if (welt, timestamp, message) is unique.
+    """
+    payload=[]
+    now_iso=datetime.utcnow().isoformat()
+
+    for l in lines:
+        # existiert schon?
+        exists = (sb.table(TABLE)
+                    .select("id", count="exact")
+                    .eq("welt", welt)
+                    .eq("timestamp", now_iso)
+                    .eq("message", l)
+                    .execute()
+                 ).count > 0
+        if not exists:
+            payload.append({"welt":welt,"timestamp":now_iso,"message":l})
+
+    if payload:
+        sb.table(TABLE).insert(payload).execute()
 
 def clean_old():
     cutoff=(datetime.utcnow()-timedelta(hours=48)).isoformat()
@@ -81,8 +98,10 @@ def static_files(filename): return send_from_directory(".",filename)
 # ── Hintergrund-Worker ───────────────────────────────────────────
 def worker():
     while True:
-        for i,u in enumerate(WELTEN_URLS,1): crawl_world(i,u)
-        clean_old(); time.sleep(300)
+        for i,u in enumerate(WELTEN_URLS,1):
+            crawl_world(i,u)
+        clean_old()
+        time.sleep(240)   # 4 Minuten
 
 if __name__=="__main__":
     threading.Thread(target=worker,daemon=True).start()
