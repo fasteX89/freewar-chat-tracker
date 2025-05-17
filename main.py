@@ -1,263 +1,129 @@
-import requests
-import time
-import os
-from bs4 import BeautifulSoup
+import os, time, threading, re, requests
 from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
 from flask import Flask, request, render_template_string, send_from_directory
-import threading
-import re
+from supabase import create_client, Client
 
-# -------------------------------
-# Chat-Tracking-Konfiguration
-# -------------------------------
-WELTEN = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
-LAST_LINES = {i: set() for i in range(1, 15)}
-LAST_GLOBAL_LINES = set()
+# ───────────────────────────────────────────────
+# Supabase-Initialisierung
+# ───────────────────────────────────────────────
+SUPABASE_URL = os.environ["https://rkrlvvhdzqtrhsvtcjwf.supabase.co"]
+SUPABASE_KEY = os.environ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJrcmx2dmhkenF0cmhzdnRjandmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc1MTI4MzMsImV4cCI6MjA2MzA4ODgzM30.aayJqyQYfHdsv56NDX1Ybp5snhm3orE6gWViUqcp6DE"]
+sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def extract_chat_lines(html):
-    soup = BeautifulSoup(html, "html.parser")
-    p_tags = soup.find_all("p")
-    lines = [p.get_text(separator=" ", strip=True) for p in p_tags if p.get_text(strip=True)]
-    return [line for line in lines if not line.startswith("Automatische Mitteilung:")]
+TABLE = "chat_logs"           # Name aus Vorbereitung
 
-def is_global_chat(line):
-    return any(keyword in line for keyword in [
-        "(Welt 1):", "(Welt 2):", "(Welt 3):", "(Welt 4):", "(Welt 5):",
-        "(Welt 6):", "(Welt 7):", "(Welt 8):", "(Welt 9):", "(Welt 10):",
-        "(Welt 11):", "(Welt 12):", "(Welt 13):", "(Welt 14):",
-        "(Chaos-Welt)", "(AF):", "(RP):"
-    ])
+# ───────────────────────────────────────────────
+# Chat-Crawler-Konfiguration
+# ───────────────────────────────────────────────
+WELTEN_URLS = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
+LAST_LINES  = {i: set() for i in range(1, 15)}   # Duplikat-Vermeidung
+LAST_GLOBAL = set()
 
-def format_message(message):
-    if "schreit:" in message:
-        return f"<span class='shout'>{message}</span><br>"
-    return f"{message}<br>"
+def extract_lines(html_text: str):
+    soup = BeautifulSoup(html_text, "html.parser")
+    lines = [p.get_text(" ", strip=True) for p in soup.find_all("p") if p.get_text(strip=True)]
+    # Filter : Automatische Mitteilung
+    return [l for l in lines if not l.startswith("Automatische Mitteilung:")]
 
-def save_lines(filename, lines):
-    today_str = datetime.now().strftime("%d.%m.%Y")
-    date_header = f"<span class='datestamp'>📅 {today_str}</span><br>\n"
-    need_date_header = True
+def is_global(line:str) -> bool:
+    pat = [f"(Welt {i}):" for i in range(1,15)] + ["(Chaos-Welt)", "(Welt AF):", "(Welt RP):"]
+    return any(k in line for k in pat)
 
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            content = f.read()
-            if date_header.strip() in content:
-                need_date_header = False
+def store_lines(welt:int, lines:list[str]):
+    # Einfügen als Batch
+    data = [{
+        "welt": welt,
+        "timestamp": datetime.utcnow().isoformat(),
+        "message": l
+    } for l in lines]
+    if data:
+        sb.table(TABLE).insert(data).execute()
 
-    with open(filename, "a", encoding="utf-8") as f:
-        if need_date_header:
-            f.write(date_header)
-        for line in lines:
-            f.write(format_message(line))
+def clean_old():
+    cutoff = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+    sb.table(TABLE).delete().lt("timestamp", cutoff).execute()
 
-def cleanup_old_lines(filename):
-    if not os.path.exists(filename):
-        return
-    cutoff = datetime.now() - timedelta(days=2)
-    pattern = re.compile(r"^(\d{2}\.\d{2}\.\d{4})")
+def crawl_world(welt_num:int, url:str):
+    try:
+        res = requests.get(url, timeout=10)
+        res.encoding = "utf-8"
+        if res.status_code != 200:
+            return
+        lines = extract_lines(res.text)
+        if not lines: return
 
-    new_lines = []
-    current_date = None
+        new = [l for l in lines if l not in LAST_LINES[welt_num]]
+        if not new: return
 
-    with open(filename, "r", encoding="utf-8") as f:
-        for line in f:
-            match = re.search(r"(\d{2}\.\d{2}\.\d{4})", line)
-            if match:
-                current_date = datetime.strptime(match.group(1), "%d.%m.%Y")
-                if current_date >= cutoff:
-                    new_lines.append(line)
-            elif current_date and current_date >= cutoff:
-                new_lines.append(line)
+        globals_ = [l for l in new if is_global(l)]
+        locals_  = [l for l in new if l not in globals_]
 
-    with open(filename, "w", encoding="utf-8") as f:
-        f.writelines(new_lines)
+        if locals_:
+            store_lines(welt_num, locals_)
+            LAST_LINES[welt_num].update(locals_)
 
-def save_new_lines(welt_nummer, lines):
-    global LAST_GLOBAL_LINES
-    new_lines = [line for line in lines if line not in LAST_LINES[welt_nummer]]
-    new_global_lines = [line for line in new_lines if is_global_chat(line)]
-    new_local_lines = [line for line in new_lines if not is_global_chat(line)]
+        if welt_num == 1 and globals_:
+            store_lines(0, globals_)          # welt==0 → global
+            LAST_GLOBAL.update(globals_)
 
-    if new_local_lines:
-        filename = f"welt{welt_nummer}_chatlog.txt"
-        save_lines(filename, new_local_lines)
-        LAST_LINES[welt_nummer].update(new_local_lines)
+    except Exception as e:
+        print(f"[Welt {welt_num}] Fehler: {e}")
 
-    if welt_nummer == 1 and new_global_lines:
-        filename = "global_chatlog.txt"
-        save_lines(filename, new_global_lines)
-        LAST_GLOBAL_LINES.update(new_global_lines)
-
-    # Reinigung der Logdateien älterer Einträge
-    cleanup_old_lines(f"welt{welt_nummer}_chatlog.txt")
-    if welt_nummer == 1:
-        cleanup_old_lines("global_chatlog.txt")
-
-def fetch_all_worlds():
-    for i, url in enumerate(WELTEN, start=1):
-        try:
-            response = requests.get(url, timeout=10)
-            response.encoding = 'utf-8'
-            if response.status_code == 200:
-                chat_lines = extract_chat_lines(response.text)
-                if chat_lines:
-                    save_new_lines(i, chat_lines)
-        except Exception as e:
-            print(f"[Welt {i}] Fehler beim Abruf: {e}")
-
-# -------------------------------
-# Flask Webserver
-# -------------------------------
+# ───────────────────────────────────────────────
+# Flask Frontend
+# ───────────────────────────────────────────────
 app = Flask(__name__)
+
+def format_msg(msg:str):
+    msg = re.escape(msg)         # HTML escapen
+    msg = msg.replace("\\ ", " ")  # Rück-escape spaces
+    if "schreit:" in msg:
+        return f"<span class='shout'>{msg}</span><br>"
+    return f"{msg}<br>"
+
+def fetch_from_db(welt:int):
+    q = (sb.table(TABLE)
+           .select("timestamp,message")
+           .eq("welt", welt)
+           .order("timestamp"))
+    rows = q.execute().data
+    # gruppiere nach Datum → fette Überschrift
+    out, cur_date = [], ""
+    for r in rows:
+        ts = datetime.fromisoformat(r["timestamp"])
+        d  = ts.strftime("%d.%m.%Y")
+        if d != cur_date:
+            out.append(f"<span class='datestamp'>📅 {d}</span><br>")
+            cur_date = d
+        out.append(format_msg(r["message"]))
+    return "".join(out)
 
 @app.route("/")
 def index():
-    welt = request.args.get("welt")
+    welt = request.args.get("welt")  # None→leer
     logs = ""
-
     if welt == "global":
-        try:
-            with open("global_chatlog.txt", "r", encoding="utf-8") as file:
-                logs = file.read()
-        except FileNotFoundError:
-            logs = "Kein globaler Chatverlauf vorhanden."
+        logs = fetch_from_db(0)
     elif welt and welt.isdigit() and 1 <= int(welt) <= 14:
-        try:
-            with open(f"welt{welt}_chatlog.txt", "r", encoding="utf-8") as file:
-                logs = file.read()
-        except FileNotFoundError:
-            logs = f"Kein Chatverlauf für Welt {welt} vorhanden."
-
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Freewar Chat Tracker</title>
-        <style>
-            body {
-                background-color: var(--bg);
-                color: var(--fg);
-                font-family: Arial, sans-serif;
-                padding: 20px;
-            }
-            :root {
-                --bg: #1e1e1e;
-                --fg: #e0e0e0;
-                --input-bg: #2a2a2a;
-                --input-fg: #ffffff;
-            }
-            .light-mode {
-                --bg: #ffffff;
-                --fg: #000000;
-                --input-bg: #f0f0f0;
-                --input-fg: #000000;
-            }
-            .button {
-                padding: 10px 15px;
-                margin: 5px;
-                border: none;
-                background-color: #444;
-                color: white;
-                cursor: pointer;
-                border-radius: 5px;
-            }
-            .button:hover {
-                background-color: #666;
-            }
-            .search-box {
-                margin: 10px 0;
-            }
-            #chatDisplay {
-                background-color: var(--input-bg);
-                color: var(--input-fg);
-                padding: 10px;
-                border: 1px solid #333;
-                font-family: monospace;
-                white-space: pre-wrap;
-                height: 600px;
-                overflow-y: scroll;
-            }
-            .shout {
-                color: #3399ff;
-                font-weight: bold;
-            }
-            .datestamp {
-                font-size: 2em;
-                font-weight: bold;
-                display: block;
-                margin: 10px 0;
-            }
-            .donate-link {
-                margin-top: 20px;
-                display: inline-block;
-                font-size: 1.2em;
-            }
-        </style>
-    </head>
-    <body>
-        <h1>Freewar Chat Tracker</h1>
-
-        <div>
-            {% for i in range(1, 15) %}
-                <a href="/?welt={{i}}"><button class="button">Welt {{i}}</button></a>
-            {% endfor %}
-            <a href="/?welt=global"><button class="button">🌐 Global</button></a>
-        </div>
-
-        <div class="search-box">
-            <input type="text" id="searchInput" class="button" placeholder="Suche...">
-            <button class="button" onclick="toggleDarkMode()">🌗 Dark Mode umschalten</button>
-        </div>
-
-        <div id="chatDisplay">{{ logs|safe }}</div>
-
-        <a class="donate-link" href="https://paypal.me/FabianSchmitt89" target="_blank">💖 Spende</a>
-
-        <script>
-            const searchInput = document.getElementById("searchInput");
-            const chatDisplay = document.getElementById("chatDisplay");
-            const originalContent = chatDisplay.innerHTML;
-
-            searchInput.addEventListener("input", function () {
-                const term = this.value.toLowerCase();
-                if (!term) {
-                    chatDisplay.innerHTML = originalContent;
-                    return;
-                }
-                const filtered = originalContent.split("<br>").filter(line =>
-                    line.toLowerCase().includes(term)
-                );
-                chatDisplay.innerHTML = filtered.join("<br>");
-            });
-
-            function toggleDarkMode() {
-                const isLight = document.body.classList.toggle("light-mode");
-                localStorage.setItem("theme", isLight ? "light" : "dark");
-            }
-
-            if (localStorage.getItem("theme") === "light") {
-                document.body.classList.add("light-mode");
-            }
-        </script>
-    </body>
-    </html>
-    """, logs=logs)
+        logs = fetch_from_db(int(welt))
+    page = open("template.html", encoding="utf-8").read()
+    return render_template_string(page, logs=logs)
 
 @app.route("/<path:filename>")
-def serve_log(filename):
-    return send_from_directory('.', filename)
+def statics(filename):
+    return send_from_directory(".", filename)
 
-# -------------------------------
-# Hintergrund-Tracking-Thread
-# -------------------------------
+# ───────────────────────────────────────────────
+# Hintergrund-Thread
+# ───────────────────────────────────────────────
+def worker():
+    while True:
+        for idx, url in enumerate(WELTEN_URLS, 1):
+            crawl_world(idx, url)
+        clean_old()
+        time.sleep(300)          # 5 Minuten
+
 if __name__ == "__main__":
-    def loop_fetch():
-        print("Starte Freewar Chat Tracker (5-Minuten-Takt)...")
-        while True:
-            fetch_all_worlds()
-            time.sleep(300)
-
-    tracking_thread = threading.Thread(target=loop_fetch, daemon=True)
-    tracking_thread.start()
-
+    threading.Thread(target=worker, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
