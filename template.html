@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Freewar Chat Tracker</title>
+
+  <style>
+    :root {
+      --bg: #1e1e1e;
+      --fg: #e0e0e0;
+      --input-bg: #2a2a2a;
+      --input-fg: #ffffff;
+    }
+    .light-mode {
+      --bg: #ffffff;
+      --fg: #000000;
+      --input-bg: #f0f0f0;
+      --input-fg: #000000;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--fg);
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    h1 { margin-top: 0 }
+
+    .button {
+      padding: 10px 15px;
+      margin: 5px;
+      border: none;
+      background-color: #444;
+      color: #fff;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    .button:hover { background-color: #666; }
+
+    .search-box { margin: 10px 0; }
+
+    #chatDisplay {
+      background-color: var(--input-bg);
+      color: var(--input-fg);
+      padding: 10px;
+      border: 1px solid #333;
+      font-family: monospace;
+      white-space: pre-wrap;
+      height: 600px;
+      overflow-y: scroll;
+    }
+
+    .shout     { color: #3399ff; font-weight: bold; }
+    .datestamp { font-size: 2em; font-weight: bold; display:block; margin:10px 0; }
+    .donate-link { margin-top: 20px; display:inline-block; font-size:1.2em; }
+  </style>
+</head>
+<body>
+  <h1>Freewar Chat Tracker</h1>
+
+  <!-- Welt-Buttons -->
+  <div>
+    {% for i in range(1, 15) %}
+      <a href="/?welt={{i}}"><button class="button">Welt {{ i }}</button></a>
+    {% endfor %}
+    <a href="/?welt=global"><button class="button">🌐 Global</button></a>
+  </div>
+
+  <!-- Suche + Dark-Mode-Toggle -->
+  <div class="search-box">
+    <input type="text" id="searchInput" class="button" placeholder="Suche…" />
+    <button class="button" onclick="toggleDarkMode()">🌗 Dark Mode umschalten</button>
+  </div>
+
+  <!-- Chat-Ausgabe -->
+  <div id="chatDisplay">{{ logs|safe }}</div>
+
+  <!-- Spendenlink -->
+  <a class="donate-link" href="https://paypal.me/FabianSchmitt89" target="_blank">💖 Spende</a>
+
+  <script>
+    const searchInput  = document.getElementById('searchInput');
+    const chatDisplay  = document.getElementById('chatDisplay');
+    const originalHTML = chatDisplay.innerHTML;
+
+    searchInput.addEventListener('input', () => {
+      const term = searchInput.value.toLowerCase();
+      if (!term) { chatDisplay.innerHTML = originalHTML; return; }
+
+      const filtered = originalHTML.split('<br>').filter(line =>
+        line.toLowerCase().includes(term)
+      );
+      chatDisplay.innerHTML = filtered.join('<br>');
+    });
+
+    function toggleDarkMode () {
+      const isLight = document.body.classList.toggle('light-mode');
+      localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    }
+
+    // Theme wiederherstellen
+    if (localStorage.getItem('theme') === 'light') {
+      document.body.classList.add('light-mode');
+    }
+  </script>
+</body>
+</html>
