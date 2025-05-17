@@ -1,4 +1,4 @@
 flask
 requests
 beautifulsoup4
-supabase-py==2.*
+supabase-py==1.0.3
