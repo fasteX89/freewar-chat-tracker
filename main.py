@@ -22,9 +22,10 @@ GLOBAL_MARKER = (
 
 # ── Hilfsfunktionen ──────────────────────────────────────────────
 def extract_lines(html_text: str):
-    soup  = BeautifulSoup(html_text, "html.parser")
-    raw   = [p.get_text(" ", strip=True) for p in soup.find_all("p") if p.get_text(strip=True)]
-    return [l for l in raw if not l.startswith("Automatische Mitteilung:")]
+    soup = BeautifulSoup(html_text, "html.parser")
+    lines = [p.get_text(" ", strip=True) for p in soup.find_all("p") if p.get_text(strip=True)]
+    # Filter : Automatische Mitteilung (case-insensitive, ohne führende Leerzeichen)
+    return [l for l in lines if not l.strip().lower().startswith("automatische mitteilung:")]
 
 def is_global(line:str) -> bool:
     return any(k in line for k in GLOBAL_MARKER)
