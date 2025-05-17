@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from flask import Flask, request, render_template_string, send_from_directory
 from supabase import create_client
+from zoneinfo import ZoneInfo          #  Python 3.9+
+BERLIN = ZoneInfo("Europe/Berlin")
 
 # ── Supabase ­Creds  (jetzt aus Environment) ────────────────────
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -79,13 +81,24 @@ def fmt(msg:str):
     return f"<span class='shout'>{safe}</span><br>" if "schreit:" in safe else f"{safe}<br>"
 
 def fetch_from_db(welt:int):
-    rows=(sb.table(TABLE).select("timestamp,message").eq("welt",welt).order("timestamp").execute().data)
-    out,cur="",""
+    rows = (sb.table(TABLE)
+              .select("timestamp,message")
+              .eq("welt", welt)
+              .order("timestamp")).execute().data
+
+    out, cur_date = [], ""
     for r in rows:
-        ts=datetime.fromisoformat(r["timestamp"]); d=ts.strftime("%d.%m.%Y")
-        if d!=cur: out+=f"<span class='datestamp'>📅 {d}</span><br>"; cur=d
-        out+=fmt(r["message"])
-    return out
+        # UTC-Zeit aus DB → Berliner Zeit
+        ts_utc = datetime.fromisoformat(r["timestamp"])
+        ts_de  = ts_utc.astimezone(BERLIN)
+
+        d = ts_de.strftime("%d.%m.%Y")
+        if d != cur_date:
+            out.append(f"<span class='datestamp'>📅 {d}</span><br>")
+            cur_date = d
+
+        out.append(fmt(r["message"]))
+    return "".join(out)
 
 @app.route("/")
 def index():
