@@ -4,12 +4,9 @@ from bs4 import BeautifulSoup
 from flask import Flask, request, render_template_string, send_from_directory
 from supabase import create_client
 
-# ── Supabase ­Creds  (→ später via Env-Vars!) ────────────────────
-SUPABASE_URL = "https://rkrlvvhdzqtrhsvtcjwf.supabase.co"
-SUPABASE_KEY = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-                "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJrcmx2dmhkenF0cmhzdnRjandmIiwicm9s"
-                "ZSI6ImFub24iLCJpYXQiOjE3NDc1MTI4MzMsImV4cCI6MjA2MzA4ODgzM30."
-                "aayJqyQYfHdsv56NDX1Ybp5snhm3orE6gWViUqcp6DE")
+# ── Supabase ­Creds  (jetzt aus Environment) ────────────────────
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 TABLE = "chat_logs"
 
