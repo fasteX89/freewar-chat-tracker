@@ -23,13 +23,11 @@ GLOBAL_MARKER = (
 )
 
 # ── Hilfsfunktionen ──────────────────────────────────────────────
-AUTO_REGEX = re.compile(r"^\s*automatische\s+mitteilung:", re.I)
-
-def extract_lines(html_text: str) -> list[str]:
-    soup  = BeautifulSoup(html_text, "html.parser")
-    raw   = [p.get_text(" ", strip=True) for p in soup.find_all("p") if p.get_text(strip=True)]
-    # Zeile wird nur übernommen, wenn sie NICHT zur Auto-Mitteilung passt
-    return [l for l in raw if not AUTO_REGEX.match(l)]
+def extract_lines(html_text: str):
+    soup = BeautifulSoup(html_text, "html.parser")
+    lines = [p.get_text(" ", strip=True) for p in soup.find_all("p") if p.get_text(strip=True)]
+    # Filter: schließe alles mit „Automatische Mitteilung:“ aus, egal wo es steht
+    return [l for l in lines if "Automatische Mitteilung:" not in l]
 
 def is_global(line:str) -> bool:
     return any(k in line for k in GLOBAL_MARKER)
