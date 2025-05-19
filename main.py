@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from flask import Flask, request, render_template_string, send_from_directory
 from supabase import create_client, Client
+import html  # ganz oben ergänzen
 
 # ───────────────────────────────────────────────
 # Supabase-Initialisierung
@@ -79,8 +80,9 @@ def crawl_world(welt_num: int, url: str):
 # ───────────────────────────────────────────────
 app = Flask(__name__)
 
+
 def format_msg(msg: str):
-    msg = re.escape(msg).replace("\\ ", " ")
+    msg = html.escape(msg)  # korrektes HTML-Escaping
     if "schreit:" in msg:
         return f"<span class='shout'>{msg}</span><br>"
     return f"{msg}<br>"
