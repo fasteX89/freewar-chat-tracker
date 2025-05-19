@@ -88,22 +88,23 @@ def format_msg(msg: str):
     return f"{msg}<br>"
 
 def fetch_from_db(welt: int):
-    q = (
-        sb.table(TABLE)
-        .select("timestamp,message")
-        .eq("welt", welt)
-        .order("timestamp")
-    )
+    q = (sb.table(TABLE)
+           .select("timestamp,message")
+           .eq("welt", welt)
+           .order("timestamp"))
     rows = q.execute().data
+
+    # Gruppiere nach Datum → fette Überschrift
     out, cur_date = [], ""
     for r in rows:
         ts = datetime.fromisoformat(r["timestamp"])
-        d = (ts + timedelta(hours=2)).strftime("%d.%m.%Y")  # UTC → MEZ
+        d = (ts + timedelta(hours=2)).strftime("%d.%m.%Y")  # UTC+2
         if d != cur_date:
             out.append(f"<span class='datestamp'>📅 {d}</span><br>")
             cur_date = d
-        line = f"{ts.strftime('%H:%M')} {r['message']}"
-        out.append(format_msg(line))
+
+        # Nur die Nachricht selbst – ohne Zeitstempel
+        out.append(format_msg(r["message"]))
     return "".join(out)
 
 @app.route("/")
