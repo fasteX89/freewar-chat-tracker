@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup
 from flask import Flask, request, render_template_string, send_from_directory
 from supabase import create_client, Client
 import html  # ganz oben ergänzen
+import re
+from collections import defaultdict
 
 # ───────────────────────────────────────────────
 # Supabase-Initialisierung
@@ -20,6 +22,13 @@ TABLE = "chat_logs"
 WELTEN_URLS = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
 LAST_LINES = {i: set() for i in range(1, 15)}
 LAST_GLOBAL = set()
+
+def extract_time_from_message(msg: str):
+    match = re.match(r"(\d{2}):(\d{2}):(\d{2})", msg)
+    if match:
+        h, m, s = map(int, match.groups())
+        return h * 3600 + m * 60 + s  # Sekunden seit Mitternacht
+    return -1  # Wenn kein Zeitstempel vorhanden ist
 
 def extract_lines(html_text: str):
     soup = BeautifulSoup(html_text, "html.parser")
@@ -94,17 +103,24 @@ def fetch_from_db(welt: int):
            .order("timestamp"))
     rows = q.execute().data
 
-    # Gruppiere nach Datum → fette Überschrift
-    out, cur_date = [], ""
+    # Gruppiere nach lokalem Datum (GMT+2)
+    grouped = defaultdict(list)
     for r in rows:
-        ts = datetime.fromisoformat(r["timestamp"])
-        d = (ts + timedelta(hours=2)).strftime("%d.%m.%Y")  # UTC+2
-        if d != cur_date:
-            out.append(f"<span class='datestamp'>📅 {d}</span><br>")
-            cur_date = d
+        ts = datetime.fromisoformat(r["timestamp"]) + timedelta(hours=2)  # UTC → GMT+2
+        date_str = ts.strftime("%d.%m.%Y")
+        grouped[date_str].append(r)
 
-        # Nur die Nachricht selbst – ohne Zeitstempel
-        out.append(format_msg(r["message"]))
+    out = []
+    for date in sorted(grouped.keys()):
+        out.append(f"<span class='datestamp'>📅 {date}</span><br>")
+        messages = grouped[date]
+
+        # Sortiere nach Uhrzeit aus dem Nachrichtentext
+        sorted_msgs = sorted(messages, key=lambda r: extract_time_from_message(r["message"]))
+
+        for r in sorted_msgs:
+            out.append(format_msg(r["message"]))
+
     return "".join(out)
 
 @app.route("/")
