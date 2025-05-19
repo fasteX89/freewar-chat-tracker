@@ -51,7 +51,8 @@ def store_lines(welt: int, lines: list[str]):
                 print(f"[store_lines] Fehler: {e}")
 
 def clean_old():
-    cutoff = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+    # Lokalzeit = UTC+2
+    cutoff = (datetime.utcnow() + timedelta(hours=2) - timedelta(hours=48)).isoformat()
     sb.table(TABLE).delete().lt("timestamp", cutoff).execute()
 
 def crawl_world(welt_num: int, url: str):
