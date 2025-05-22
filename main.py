@@ -3,56 +3,59 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from flask import Flask, request, render_template_string, send_from_directory
 from supabase import create_client, Client
-import html  # ganz oben ergänzen
-import re
-from collections import defaultdict
+from zoneinfo import ZoneInfo
 
-# ───────────────────────────────────────────────
-# Supabase-Initialisierung
-# ───────────────────────────────────────────────
+# ─────────────────────────────
+# Supabase Initialisierung
+# ─────────────────────────────
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 TABLE = "chat_logs"
 
-# ───────────────────────────────────────────────
-# Chat-Crawler-Konfiguration
-# ───────────────────────────────────────────────
+# ─────────────────────────────
+# Chat-Crawler Setup
+# ─────────────────────────────
 WELTEN_URLS = [f"https://welt{i}.freewar.de/freewar/internal/chattext.php" for i in range(1, 15)]
 LAST_LINES = {i: set() for i in range(1, 15)}
 LAST_GLOBAL = set()
 
-def extract_time_from_message(msg: str):
-    match = re.match(r"(\d{2}):(\d{2}):(\d{2})", msg)
-    if match:
-        h, m, s = map(int, match.groups())
-        return h * 3600 + m * 60 + s  # Sekunden seit Mitternacht
-    return -1  # Wenn kein Zeitstempel vorhanden ist
-
 def extract_lines(html_text: str):
     soup = BeautifulSoup(html_text, "html.parser")
-    lines = [p.get_text(" ", strip=True) for p in soup.find_all("p")]
-    # Ausschluss: Alles mit "Automatische Mitteilung:" im Text
+    lines = [p.get_text(" ", strip=True) for p in soup.find_all("p") if p.get_text(strip=True)]
     return [l for l in lines if "Automatische Mitteilung:" not in l]
 
 def is_global(line: str) -> bool:
-    global_keys = [f"(Welt {i}):" for i in range(1, 15)] + ["(Chaos-Welt):", "(Welt AF):", "(Welt RP):"]
-    return any(k in line for k in global_keys)
+    pat = [f"(Welt {i}):" for i in range(1, 15)] + ["(Welt AF):", "(Welt RP):"]
+    return any(k in line for k in pat)
 
-def store_lines(welt: int, lines: list[str]):
-    now = datetime.utcnow().isoformat()
-    data = [{"welt": welt, "timestamp": now, "message": l} for l in lines]
+def get_berlin_timestamp(line: str, fetch_time_utc: datetime) -> str:
+    match = re.match(r"^(\d{2}:\d{2}:\d{2})", line)
+    if not match:
+        return fetch_time_utc.astimezone(ZoneInfo("Europe/Berlin")).isoformat()
+
+    time_str = match.group(1)
+    line_time = datetime.strptime(time_str, "%H:%M:%S").time()
+
+    fetch_berlin = fetch_time_utc.astimezone(ZoneInfo("Europe/Berlin"))
+    line_dt = datetime.combine(fetch_berlin.date(), line_time, tzinfo=ZoneInfo("Europe/Berlin"))
+
+    if line_dt > fetch_berlin:
+        line_dt -= timedelta(days=1)
+
+    return line_dt.isoformat()
+
+def store_lines(welt: int, lines: list[str], fetch_time_utc: datetime):
+    data = [{
+        "welt": welt,
+        "timestamp": get_berlin_timestamp(l, fetch_time_utc),
+        "message": l
+    } for l in lines]
     if data:
-        try:
-            sb.table(TABLE).insert(data).execute()
-        except Exception as e:
-            if "duplicate key" not in str(e).lower():
-                print(f"[store_lines] Fehler: {e}")
+        sb.table(TABLE).insert(data).execute()
 
 def clean_old():
-    # Lokalzeit = UTC+2
-    cutoff = (datetime.utcnow() + timedelta(hours=2) - timedelta(hours=48)).isoformat()
+    cutoff = (datetime.utcnow() - timedelta(hours=48)).isoformat()
     sb.table(TABLE).delete().lt("timestamp", cutoff).execute()
 
 def crawl_world(welt_num: int, url: str):
@@ -69,30 +72,29 @@ def crawl_world(welt_num: int, url: str):
         if not new:
             return
 
+        fetch_time_utc = datetime.utcnow()
         globals_ = [l for l in new if is_global(l)]
         locals_ = [l for l in new if l not in globals_]
 
         if locals_:
-            store_lines(welt_num, locals_)
+            store_lines(welt_num, locals_, fetch_time_utc)
             LAST_LINES[welt_num].update(locals_)
 
         if welt_num == 1 and globals_:
-            new_global = [l for l in globals_ if l not in LAST_GLOBAL]
-            if new_global:
-                store_lines(0, new_global)
-                LAST_GLOBAL.update(new_global)
+            store_lines(0, globals_, fetch_time_utc)
+            LAST_GLOBAL.update(globals_)
 
     except Exception as e:
         print(f"[Welt {welt_num}] Fehler: {e}")
 
-# ───────────────────────────────────────────────
-# Flask Frontend
-# ───────────────────────────────────────────────
+# ─────────────────────────────
+# Flask Web-Interface
+# ─────────────────────────────
 app = Flask(__name__)
 
-
 def format_msg(msg: str):
-    msg = html.escape(msg)  # korrektes HTML-Escaping
+    msg = re.escape(msg)
+    msg = msg.replace("\\ ", " ")
     if "schreit:" in msg:
         return f"<span class='shout'>{msg}</span><br>"
     return f"{msg}<br>"
@@ -103,31 +105,21 @@ def fetch_from_db(welt: int):
            .eq("welt", welt)
            .order("timestamp"))
     rows = q.execute().data
+
+    seen = set()
     out, cur_date = [], ""
-
     for r in rows:
-        msg = r["message"]
-        ts = datetime.fromisoformat(r["timestamp"])
+        ts = datetime.fromisoformat(r["timestamp"]).astimezone(ZoneInfo("Europe/Berlin"))
+        d = ts.strftime("%d.%m.%Y")
+        key = (ts.isoformat(), r["message"])
+        if key in seen:
+            continue
+        seen.add(key)
 
-        # Uhrzeit aus Nachricht extrahieren
-        match = re.match(r"(\d{2}):(\d{2}):(\d{2})", msg)
-        if match:
-            hour, minute, second = map(int, match.groups())
-            msg_time = datetime(ts.year, ts.month, ts.day, hour, minute, second)
-
-            # Wenn Nachricht um 23:xx ist, aber timestamp ist kurz nach Mitternacht → gehört zum Vortag
-            if ts.hour < 3 and hour >= 22:
-                msg_time -= timedelta(days=1)
-        else:
-            msg_time = ts  # Fallback
-
-        d = msg_time.strftime("%d.%m.%Y")
         if d != cur_date:
             out.append(f"<span class='datestamp'>📅 {d}</span><br>")
             cur_date = d
-
-        out.append(format_msg(msg))
-
+        out.append(format_msg(r["message"]))
     return "".join(out)
 
 @app.route("/")
@@ -138,22 +130,22 @@ def index():
         logs = fetch_from_db(0)
     elif welt and welt.isdigit() and 1 <= int(welt) <= 14:
         logs = fetch_from_db(int(welt))
-    page = open("template.html", encoding="utf-8").read()
-    return render_template_string(page, logs=logs)
+    tpl = open("template.html", encoding="utf-8").read()
+    return render_template_string(tpl, logs=logs)
 
 @app.route("/<path:filename>")
 def statics(filename):
     return send_from_directory(".", filename)
 
-# ───────────────────────────────────────────────
-# Hintergrund-Thread
-# ───────────────────────────────────────────────
+# ─────────────────────────────
+# Hintergrund-Worker
+# ─────────────────────────────
 def worker():
     while True:
         for idx, url in enumerate(WELTEN_URLS, 1):
             crawl_world(idx, url)
         clean_old()
-        time.sleep(240)  # Alle 4 Minuten
+        time.sleep(240)  # alle 4 Minuten
 
 if __name__ == "__main__":
     threading.Thread(target=worker, daemon=True).start()
