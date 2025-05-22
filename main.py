@@ -103,24 +103,30 @@ def fetch_from_db(welt: int):
            .eq("welt", welt)
            .order("timestamp"))
     rows = q.execute().data
+    out, cur_date = [], ""
 
-    # Gruppiere nach lokalem Datum (GMT+2)
-    grouped = defaultdict(list)
     for r in rows:
-        ts = datetime.fromisoformat(r["timestamp"]) + timedelta(hours=2)  # UTC → GMT+2
-        date_str = ts.strftime("%d.%m.%Y")
-        grouped[date_str].append(r)
+        msg = r["message"]
+        ts = datetime.fromisoformat(r["timestamp"])
 
-    out = []
-    for date in sorted(grouped.keys()):
-        out.append(f"<span class='datestamp'>📅 {date}</span><br>")
-        messages = grouped[date]
+        # Uhrzeit aus Nachricht extrahieren
+        match = re.match(r"(\d{2}):(\d{2}):(\d{2})", msg)
+        if match:
+            hour, minute, second = map(int, match.groups())
+            msg_time = datetime(ts.year, ts.month, ts.day, hour, minute, second)
 
-        # Sortiere nach Uhrzeit aus dem Nachrichtentext
-        sorted_msgs = sorted(messages, key=lambda r: extract_time_from_message(r["message"]))
+            # Wenn Nachricht um 23:xx ist, aber timestamp ist kurz nach Mitternacht → gehört zum Vortag
+            if ts.hour < 3 and hour >= 22:
+                msg_time -= timedelta(days=1)
+        else:
+            msg_time = ts  # Fallback
 
-        for r in sorted_msgs:
-            out.append(format_msg(r["message"]))
+        d = msg_time.strftime("%d.%m.%Y")
+        if d != cur_date:
+            out.append(f"<span class='datestamp'>📅 {d}</span><br>")
+            cur_date = d
+
+        out.append(format_msg(msg))
 
     return "".join(out)
 
