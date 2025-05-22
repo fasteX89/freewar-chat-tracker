@@ -27,7 +27,7 @@ def extract_lines(html_text: str):
     return [l for l in lines if "Automatische Mitteilung:" not in l]
 
 def is_global(line: str) -> bool:
-    pat = [f"(Welt {i}):" for i in range(1, 15)] + ["(Welt AF):", "(Welt RP):"]
+    pat = [f"(Welt {i}):" for i in range(1, 15)] + ["(Welt AF):", "(Chaos-Welt):"]
     return any(k in line for k in pat)
 
 def get_berlin_timestamp(line: str, fetch_time_utc: datetime) -> str:
@@ -83,6 +83,7 @@ def crawl_world(welt_num: int, url: str):
 
         if welt_num == 1 and globals_:
             store_lines(0, globals_, fetch_time_utc)
+            LAST_LINES[welt_num].update(globals_)  # <-- hinzufügen!
             LAST_GLOBAL.update(globals_)
 
     except Exception as e:
