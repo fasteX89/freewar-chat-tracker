@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from flask import Flask, request, render_template_string, send_from_directory
 from supabase import create_client, Client
 from zoneinfo import ZoneInfo
+import html
 
 # ─────────────────────────────
 # Supabase Initialisierung
@@ -93,8 +94,7 @@ def crawl_world(welt_num: int, url: str):
 app = Flask(__name__)
 
 def format_msg(msg: str):
-    msg = re.escape(msg)
-    msg = msg.replace("\\ ", " ")
+    msg = html.escape(msg)  # sicher und ohne Backslashes
     if "schreit:" in msg:
         return f"<span class='shout'>{msg}</span><br>"
     return f"{msg}<br>"
