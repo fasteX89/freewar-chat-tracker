@@ -104,8 +104,9 @@ def fetch_from_db(welt: int):
     q = (sb.table(TABLE)
            .select("timestamp,message")
            .eq("welt", welt)
-           .order("timestamp"))
-    rows = q.execute().data
+           .order("timestamp", desc=True)
+           .limit(1500))
+    rows = q.execute().data[::-1]  # Umkehren: älteste zuerst
 
     seen = set()
     out, cur_date = [], ""
