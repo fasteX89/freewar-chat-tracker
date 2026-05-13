@@ -27,7 +27,7 @@ def extract_lines(html_text: str):
     return [l for l in lines if "Automatische Mitteilung:" not in l]
 
 def is_global(line: str) -> bool:
-    pat = [f"(Welt {i}):" for i in range(1, 15)] + ["(Welt AF):", "(Chaos-Welt):"]
+    pat = [f"(Welt {i}):" for i in range(1, 15)] + ["(Welt AF):", "(Chaos-Welt):", "(RP-Welt):"]
     return any(k in line for k in pat)
 
 def get_berlin_timestamp(line: str, fetch_time_utc: datetime) -> str:
